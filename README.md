@@ -28,7 +28,7 @@ requests and can allow them. The Removed participants section allows readmission
 the user then manually joins again with the same invitation. Admission policies
 survive restart and leaving/rejoining the room.
 
-All participants must update to the membership-aware wire protocol (v3).
+All participants must update to the source-aware wire protocol (v4).
 Existing wtg2 invitations remain valid. Without accounts a user can create new
 keys, so the admin must recognize whom they approve. Removal controls application
 membership; it cannot erase invitation secrets already held by a custom client.
@@ -37,8 +37,24 @@ Refreshing a video page restores its saved binding and position on pause when
 the player is accessible. Identical tabs/ambiguous frames require manual selection.
 Storage schema/key errors stop recovery rather than silently replacing identity.
 
-The room currently shares its initial source/player state and participant list.
-Navigation and playback synchronization are not implemented yet. Public signaling
+Any admitted participant can change the shared URL or use “Смотреть это вместе” on a
+video card. The coordinator orders changes with source revisions. Creating or
+joining a room binds the tab active at that action as your viewing tab. Shared
+URLs navigate only that tab; matching URLs do not reload. Switching to another
+tab does not move the binding. No new tabs are created automatically.
+“Выбрать плеер у меня” and
+on-page selection only map a local player, useful when the shared selector does
+not match a personalized page. Local mappings reset when the shared source changes.
+
+“Перейти к просмотру” activates the bound tab; “Смотреть в этой вкладке” explicitly
+transfers viewing to your current tab. After closing the viewing tab, bind another
+one explicitly: even a new shared source does not pick an unrelated tab. Worker
+restart retains the binding; after a full Chrome restart bind a tab again. Legacy
+auto-created tabs remain open but are no longer treated as user-approved bindings.
+Leaving detaches the tab without closing it.
+Readiness indicates loading, missing video, available metadata/data/seek position,
+or an unavailable/different page. Browser autoplay permission is not tested until
+an actual playback attempt. Playback synchronization is not implemented yet. Public signaling
 does not guarantee connectivity: no TURN relay fallback is configured in this
 prototype. Test on different networks before relying on it.
 

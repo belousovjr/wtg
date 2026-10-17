@@ -10,7 +10,7 @@ function load(name, imports = {}) {
   const mod = new Module(filename, module)
   mod.filename = filename
   mod.paths = module.paths
-  mod.require = id => id in imports ? imports[id] : require(id)
+  mod.require = id => id in imports ? imports[id] : id === "./source" ? load("source") : require(id)
   mod._compile(ts.transpileModule(readFileSync(filename, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
   }).outputText, filename)
@@ -30,12 +30,14 @@ function client(id, disk, network) {
       return disk.value === undefined ? persistence.emptyVault() : structuredClone(disk.value)
     } },
     trystero: { selfId: id, joinRoom: (_config, roomId) => {
+      const sent = []
       const action = { send: async (message, options) => {
+        sent.push(structuredClone(message))
         for (const peer of network.filter(p => p.roomId === roomId && p.id !== id && (!options || options.target === p.id))) {
           peer.transport.action.onMessage?.(structuredClone(message), { peerId: id })
         }
       } }
-      const transport = { action, makeAction: () => action, leave: async () => {
+      const transport = { sent, action, makeAction: () => action, leave: async () => {
         const index = network.findIndex(p => p.transport === transport)
         if (index >= 0) network.splice(index, 1)
       } }
@@ -104,7 +106,7 @@ test("signed end survives offline guest and cannot be forged", async () => {
   await assert.rejects(admin.roomCommand({ kind: "join", invitation: created.invitation }), /завершена/)
   const guest = client("returning-guest", {}, network)
   await guest.roomCommand({ kind: "join", invitation: created.invitation })
-  guest.transports.at(-1).action.onMessage({ version: 3, roomId: protocol.decodeInvitation(created.invitation).roomId,
+  guest.transports.at(-1).action.onMessage({ version: 4, roomId: protocol.decodeInvitation(created.invitation).roomId,
     id: "forged-end", sequence: 1, kind: "ended", certificate: { ...disk.value.ended[0], signature: "forged" } }, { peerId: "attacker" })
   await settle(guest)
   assert.notEqual((await guest.roomCommand({ kind: "status" })).status, "idle")
@@ -144,7 +146,7 @@ test("admin removal, persistent ban, manual approval and readmission across Peer
 
     // A forged policy must not remove an existing member or supersede revision.
     const policy = structuredClone(adminDisk.value.policies[0])
-    guest.transports.at(-1).action.onMessage({ version: 3, roomId: policy.roomId, sequence: 1, id: "fake-policy", kind: "policy",
+    guest.transports.at(-1).action.onMessage({ version: 4, roomId: policy.roomId, sequence: 1, id: "fake-policy", kind: "policy",
       policy: { ...policy, revision: policy.revision + 100, allowed: [policy.adminKey], blocked: [guestDisk.value.identity.publicKey] } }, { peerId: other.id })
     await settle(guest)
     assert.equal((await guest.roomCommand({ kind: "status" })).ready, true)
@@ -199,4 +201,37 @@ test("mesh command gate rejects excluded, unknown and stale members", () => {
   assert.equal(membership.canAcceptMemberCommand(policy, undefined, "peer", ["peer"], true), false)
   assert.equal(membership.canAcceptMemberCommand(policy, "guest", "peer", [], true), false)
   assert.equal(membership.canAcceptMemberCommand(policy, "guest", "peer", ["peer"], false), false)
+})
+
+test("guest source changes are ordered by coordinator; stale requests, snapshots and readiness are ignored", async () => {
+  const network = [], admin = client("admin", {}, network), guest = client("guest", {}, network)
+  try {
+    const created = await admin.roomCommand({ kind: "create" })
+    await guest.roomCommand({ kind: "join", invitation: created.invitation })
+    admin.transports.at(-1).onPeerJoin(guest.id)
+    guest.transports.at(-1).onPeerJoin(admin.id)
+    await settle(admin, guest)
+    const command = { kind: "source", url: "https://example.com/watch", video: null, expectedRevision: 0, commandId: crypto.randomUUID() }
+    await guest.roomCommand(command)
+    await settle(admin, guest)
+    assert.equal((await admin.roomCommand({ kind: "status" })).shared.sourceRevision, 1)
+    assert.equal((await guest.roomCommand({ kind: "status" })).shared.url, command.url)
+    await guest.roomCommand(command) // A duplicate request does not create another revision.
+    await settle(admin, guest)
+    assert.equal((await admin.roomCommand({ kind: "status" })).shared.sourceRevision, 1)
+    await assert.rejects(admin.roomCommand({ ...command, commandId: crypto.randomUUID() }), /уже изменился/)
+    const snapshot = admin.transports.at(-1).sent.findLast(m => m.kind === "snapshot")
+    guest.transports.at(-1).action.onMessage({ ...snapshot, id: crypto.randomUUID(), shared: { ...snapshot.shared, sourceRevision: 0, url: "https://old.example.com" } }, { peerId: admin.id })
+    await settle(guest)
+    assert.equal((await guest.roomCommand({ kind: "status" })).shared.url, command.url)
+    await guest.roomCommand({ kind: "source-ready", readiness: { revision: 1, status: "ready" } })
+    await settle(admin, guest)
+    assert.equal((await admin.roomCommand({ kind: "status" })).sourceReadiness.guest.status, "ready")
+    await guest.roomCommand({ kind: "source-ready", readiness: { revision: 0, status: "needs-video" } })
+    await settle(admin, guest)
+    assert.equal((await admin.roomCommand({ kind: "status" })).sourceReadiness.guest.status, "ready")
+    admin.transports.at(-1).action.onMessage({ version: 4, roomId: protocol.decodeInvitation(created.invitation).roomId, sequence: 1, id: crypto.randomUUID(), kind: "source-request", command: { ...command, expectedRevision: 1, commandId: crypto.randomUUID(), url: "https://attacker.example.com" } }, { peerId: "unadmitted" })
+    await settle(admin)
+    assert.equal((await admin.roomCommand({ kind: "status" })).shared.url, command.url)
+  } finally { await admin.roomCommand({ kind: "leave" }); await guest.roomCommand({ kind: "leave" }) }
 })

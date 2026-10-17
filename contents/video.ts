@@ -10,6 +10,28 @@ let bindingNotice: string | undefined
 let lastSaved = 0
 let restoring = false
 let restoreTimer: ReturnType<typeof setInterval> | undefined
+let roomSource: { roomId: string; revision: number; descriptor: VideoDescriptor } | undefined
+function bindRoomSource(message: { roomId: string; revision: number; descriptor: VideoDescriptor; position: number; shared?: boolean }) {
+  if (roomSource?.roomId === message.roomId && message.revision < roomSource.revision) return "unavailable"
+  const changed = roomSource?.roomId !== message.roomId || roomSource?.revision !== message.revision || JSON.stringify(roomSource.descriptor) !== JSON.stringify(message.descriptor)
+  roomSource = { roomId: message.roomId, revision: message.revision, descriptor: message.descriptor }
+  const matches = resolve(message.descriptor, { shared: message.shared })
+  if (matches.length !== 1) { setSelected(); descriptor = undefined; bindingNotice = "Плеер комнаты не найден. Выбери соответствующее видео у себя."; return "needs-video" }
+  const video = matches[0]
+  const newlyBound = selected !== video
+  clearInterval(restoreTimer)
+  // Subsequent local snapshots must check the local source, not the remote blob URL.
+  descriptor = describe(video)
+  setSelected(video)
+  roomSource = { roomId: message.roomId, revision: message.revision, descriptor: message.descriptor }
+  if (changed || newlyBound) { restoring = true; video.pause(); restoring = false }
+  if (video.readyState < 1) return "loading-video"
+  let seekable = message.position === 0
+  for (let i = 0; i < video.seekable.length; i++) if (message.position >= video.seekable.start(i) && message.position <= video.seekable.end(i)) seekable = true
+  if (!seekable || video.readyState < 2) return "loading-video"
+  bindingNotice = undefined
+  return "ready"
+}
 
 function persistBinding(force = false) {
   if (restoring || !selected?.isConnected || !descriptor || (!force && Date.now() - lastSaved < 2000)) return
@@ -109,7 +131,7 @@ function select(video: HTMLVideoElement) {
   descriptor = describe(video)
   setSelected(video)
   persistBinding(true)
-  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "video-selected" }).catch(() => {})
+  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "video-selected", selectedId: idFor(video) }).catch(() => {})
 }
 function onClick(event: MouseEvent) {
   const video = candidate(event)
@@ -155,6 +177,16 @@ export const config: PlasmoCSConfig = {
   run_at: "document_idle"
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (sender.id === chrome.runtime.id && !sender.tab && message?.channel === CHANNEL && message.to === "content" && message.type === "source-watch") {
+    refreshRoomSource()
+    respond({ ok: true })
+    return
+  }
+  if (sender.id === chrome.runtime.id && !sender.tab && message?.channel === CHANNEL && message.to === "content" && message.type === "source-bind") {
+    try { respond({ ok: true, data: { status: bindRoomSource(message) } }) }
+    catch { respond({ ok: false }) }
+    return
+  }
   if (sender.id !== chrome.runtime.id || !isRequest(message) || message.to !== "content") return
   if (message.type === "video") {
     try {
@@ -183,3 +215,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   respond({ ok: true, data: { url: location.href, title: document.title } } satisfies Reply<FrameStatus>)
 })
+// Only the top frame drives periodic readiness checks; child frames notify on load.
+let sourceRefreshTimer: ReturnType<typeof setInterval> | undefined
+const refreshRoomSource = () => {
+  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "source-refresh" }).then(reply => {
+    if (window !== window.top) return
+    if (reply?.data && !sourceRefreshTimer) sourceRefreshTimer = setInterval(refreshRoomSource, 2000)
+    if (!reply?.data && sourceRefreshTimer) { clearInterval(sourceRefreshTimer); sourceRefreshTimer = undefined }
+  }).catch(() => { if (sourceRefreshTimer) { clearInterval(sourceRefreshTimer); sourceRefreshTimer = undefined } })
+}
+refreshRoomSource()

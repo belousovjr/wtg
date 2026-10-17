@@ -6,7 +6,7 @@ export type RuntimeStatus = { instanceId: string; startedAt: number; webRtcAvail
 export type FrameStatus = { url: string; title: string }
 export type Request =
   | { channel: typeof CHANNEL; to: "background" | "offscreen"; type: "room"; command: RoomCommand }
-  | { channel: typeof CHANNEL; to: "background"; type: "video-selected" }
+  | { channel: typeof CHANNEL; to: "background"; type: "video-selected"; selectedId?: string }
   | { channel: typeof CHANNEL; to: "background"; type: "cancel-picking" }
   | { channel: typeof CHANNEL; to: "background"; type: "tab-videos"; tabId: number }
   | { channel: typeof CHANNEL; to: "background"; type: "video"; target: FrameTarget; action: VideoAction }
@@ -21,7 +21,8 @@ export function isRequest(value: unknown): value is Request {
   const m = value as Record<string, unknown>
   if (m.channel !== CHANNEL) return false
   if (m.type === "room") return (m.to === "background" || m.to === "offscreen") && validRoomCommand(m.command)
-  if (m.type === "video-selected" || m.type === "cancel-picking") return m.to === "background"
+  if (m.type === "video-selected") return m.to === "background" && (m.selectedId === undefined || typeof m.selectedId === "string" && m.selectedId.length <= 128)
+  if (m.type === "cancel-picking") return m.to === "background"
   if (m.type === "tab-videos") return m.to === "background" && Number.isInteger(m.tabId) && Number(m.tabId) >= 0
   if (m.type === "video") {
     if (!m.action || typeof m.action !== "object") return false

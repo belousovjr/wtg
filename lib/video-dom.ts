@@ -52,7 +52,18 @@ export function describe(video: HTMLVideoElement): VideoDescriptor {
   }
 }
 
-export function resolve(descriptor: VideoDescriptor): HTMLVideoElement[] {
+function compatibleSource(expected: string, actual: string, shared: boolean) {
+  if (!expected || expected === actual) return true
+  if (!shared) return false
+  // Object URLs identify a browser-local MediaSource, not a shared movie.
+  if (expected.startsWith("blob:") || actual.startsWith("blob:") || !actual) return true
+  try {
+    const a = new URL(expected), b = new URL(actual)
+    // Signed/tokenized variants of the same media resource are session-specific.
+    return a.protocol === "https:" && b.protocol === "https:" && a.origin === b.origin && a.pathname === b.pathname
+  } catch { return false }
+}
+export function resolve(descriptor: VideoDescriptor, options: { shared?: boolean } = {}): HTMLVideoElement[] {
   let root: Root = document
   try {
     for (const selector of descriptor.shadowPath) {
@@ -60,9 +71,11 @@ export function resolve(descriptor: VideoDescriptor): HTMLVideoElement[] {
       if (hosts.length !== 1 || !hosts[0].shadowRoot) return []
       root = hosts[0].shadowRoot
     }
-    return [...root.querySelectorAll(descriptor.selector)].filter((node): node is HTMLVideoElement => {
+    const candidates = [...root.querySelectorAll(descriptor.selector)]
+    if (options.shared && candidates.length !== 1) return []
+    return candidates.filter((node): node is HTMLVideoElement => {
       if (!(node instanceof HTMLVideoElement)) return false
-      if (descriptor.source && descriptor.source !== (node.currentSrc || node.src)) return false
+      if (!compatibleSource(descriptor.source, node.currentSrc || node.src, !!options.shared)) return false
       return descriptor.duration === null || !Number.isFinite(node.duration) || Math.abs(node.duration - descriptor.duration) < 1
     })
   } catch { return [] }

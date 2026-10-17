@@ -1,0 +1,136 @@
+const assert = require("node:assert/strict")
+const { readFileSync } = require("node:fs")
+const { test } = require("node:test")
+const ts = require("typescript")
+const Module = require("node:module")
+const path = require("node:path")
+function load(name, imports = {}) {
+  const filename = path.resolve(__dirname, `../lib/${name}.ts`)
+  const mod = new Module(filename, module)
+  mod.require = id => id in imports ? imports[id] : id === "./source" ? load("source") : require(id)
+  mod._compile(ts.transpileModule(readFileSync(filename, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
+  }).outputText, filename)
+  return mod.exports
+}
+const source = load("source"), protocol = load("room-protocol")
+const descriptor = { pageUrl: "https://example.com/watch", frameUrl: "https://example.com/watch", framePath: [], shadowPath: [], selector: "#video", source: "https://media.example.com/1.mp4", duration: 100 }
+const shared = { url: descriptor.pageUrl, video: descriptor, sourceRevision: 1, playback: { position: 0, paused: true, rate: 1 } }
+test("URL and descriptor validation rejects unsafe URLs and mismatched pages", () => {
+  for (const url of ["javascript:alert(1)", "chrome://settings", "https://user:password@example.com", "file:///test"]) assert.equal(source.webUrl(url), null)
+  assert.equal(protocol.validRoomCommand({ kind: "source", url: "https://other.example.com", video: descriptor, expectedRevision: 0, commandId: crypto.randomUUID() }), false)
+  const committed = source.commitSource({ ...shared, sourceRevision: undefined }, { kind: "source", url: shared.url, video: null, expectedRevision: 0, commandId: crypto.randomUUID() })
+  assert.equal(committed.sourceRevision, 1)
+  assert.equal(committed.playback.paused, true)
+})
+test("viewer only navigates explicitly bound tabs, preserves matching URLs and requires rebinding after close", async () => {
+  const session = {}, tabs = new Map([[1, { id: 1, url: shared.url, status: "complete" }], [99, { id: 99, url: "https://unrelated.example.com", status: "complete" }]]), reports = [], bound = [], navigations = []
+  let created = 0, missing = true
+  global.chrome = {
+    storage: { session: { get: async () => session, set: async value => Object.assign(session, value), remove: async key => { delete session[key] } } },
+    tabs: {
+      create: async () => { created++; throw Error("Must not create tabs") },
+      get: async id => { if (!tabs.has(id)) throw Error("Missing"); return tabs.get(id) },
+      update: async (id, data) => { if (data.url) navigations.push({ id, url: data.url }); Object.assign(tabs.get(id), data); return tabs.get(id) },
+      sendMessage: async (id, message) => {
+        if (message.type === "source-watch") return { ok: true }
+        if (message.type === "video") return { ok: true, data: { selectedId: "local", videos: [{ id: "local", descriptor: { ...descriptor, selector: "#local-player" } }] } }
+        bound.push(message)
+        return { ok: true, data: { status: missing && message.descriptor.selector !== "#local-player" ? "needs-video" : "ready" } }
+      }
+    },
+    webNavigation: { getAllFrames: async ({ tabId }) => [{ frameId: 0, parentFrameId: -1, url: tabs.get(tabId).url }] },
+    runtime: { sendMessage: async message => { reports.push(message.command.readiness); return { ok: true } } }
+  }
+  const viewer = load("source-viewer", { "./messages": { CHANNEL: "test" }, "./source": source, "./room-protocol": protocol })
+  await viewer.applySourceState({ roomId: "room", ready: true, shared })
+  assert.equal(created, 0)
+  assert.equal(reports.at(-1).status, "unavailable")
+  await viewer.bindSourceTab(1, "room")
+  assert.equal(navigations.length, 0) // Already at the source: no reload.
+  await viewer.refreshSource(1)
+  assert.equal(reports.at(-1).status, "needs-video")
+  await viewer.selectLocalSource(1, 0)
+  assert.equal(reports.at(-1).status, "ready")
+  assert.equal(bound.at(-1).descriptor.selector, "#local-player")
+  assert.equal(bound.at(-1).shared, false)
+  assert.equal(shared.video.selector, "#video") // Local mapping never changes shared descriptor.
+  const updated = { ...shared, url: "https://example.com/next", video: null, sourceRevision: 2 }
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: updated })
+  assert.equal(created, 0)
+  assert.equal(tabs.get(1).url, updated.url)
+  assert.equal(tabs.get(99).url, "https://unrelated.example.com")
+  await viewer.applySourceState({ roomId: "room", ready: true, shared })
+  assert.equal(tabs.get(1).url, updated.url)
+  await viewer.closeSource(1)
+  tabs.delete(1)
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: updated })
+  assert.equal(tabs.size, 1)
+  await assert.rejects(viewer.focusSource(), /закрыта/)
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...updated, sourceRevision: 3 } })
+  assert.equal(created, 0)
+  assert.equal(tabs.get(99).url, "https://unrelated.example.com") // New revision is not consent to use another tab.
+  await viewer.bindSourceTab(99, "room")
+  assert.equal(tabs.get(99).url, updated.url)
+  const navigationCount = navigations.length
+  await viewer.focusSource()
+  assert.equal(tabs.get(99).active, true)
+  assert.equal(navigations.length, navigationCount) // Focus does not navigate.
+  // A new worker restores the same user-approved binding from storage.session.
+  const restarted = load("source-viewer", { "./messages": { CHANNEL: "test" }, "./source": source, "./room-protocol": protocol })
+  await restarted.applySourceState({ roomId: "room", ready: true, shared: { ...updated, sourceRevision: 3 } })
+  assert.equal(navigations.length, navigationCount)
+  await restarted.applySourceState({ roomId: null, ready: false, shared: { url: null, video: null, playback: { position: 0, paused: true, rate: 1 } } })
+  assert.equal(tabs.has(99), true) // Leave detaches, never closes user's tab.
+  await assert.rejects(restarted.focusSource(), /не привязана/)
+  assert.equal(created, 0)
+})
+
+test("legacy auto-created viewer is not migrated into user consent", async () => {
+  let touched = false
+  global.chrome = {
+    storage: { session: { get: async () => ({ sourceViewer: { roomId: "room", revision: 0, url: shared.url, tabId: 123 } }) } },
+    tabs: { get: async () => { touched = true }, create: async () => { touched = true } },
+    runtime: { sendMessage: async () => ({ ok: true }) }
+  }
+  const viewer = load("source-viewer", { "./messages": { CHANNEL: "test" }, "./source": source, "./room-protocol": protocol })
+  await viewer.applySourceState({ roomId: "room", ready: true, shared })
+  assert.equal(touched, false)
+  await assert.rejects(viewer.focusSource(), /не привязана/)
+})
+
+test("shared iframe binding tolerates session query tokens without choosing an ambiguous frame", async () => {
+  const session = {}, bound = [], reports = []
+  let duplicate = false
+  const remoteUrl = "https://player.example.com/embed?token=host"
+  const localUrl = "https://player.example.com/embed?token=guest"
+  const frameVideo = { ...descriptor, frameUrl: remoteUrl, framePath: [remoteUrl] }
+  global.chrome = {
+    storage: { session: { get: async () => session, set: async v => Object.assign(session, v) } },
+    tabs: {
+      get: async () => ({ id: 1, url: shared.url, status: "complete" }),
+      sendMessage: async (_id, message, options) => {
+        if (message.type === "source-watch") return { ok: true }
+        bound.push({ message, options })
+        return { ok: true, data: { status: "ready" } }
+      }
+    },
+    webNavigation: { getAllFrames: async () => [
+      { frameId: 0, parentFrameId: -1, url: shared.url },
+      { frameId: 7, parentFrameId: 0, url: localUrl },
+      ...(duplicate ? [{ frameId: 8, parentFrameId: 0, url: "https://player.example.com/embed?token=other" }] : [])
+    ] },
+    runtime: { sendMessage: async m => { reports.push(m.command.readiness); return { ok: true } } }
+  }
+  const viewer = load("source-viewer", { "./messages": { CHANNEL: "test" }, "./source": source, "./room-protocol": protocol })
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...shared, video: frameVideo } })
+  await viewer.bindSourceTab(1, "room")
+  assert.equal(bound.at(-1).options.frameId, 7)
+  assert.equal(bound.at(-1).message.shared, true)
+  assert.equal(reports.at(-1).status, "ready")
+  duplicate = true
+  const count = bound.length
+  await viewer.refreshSource(1)
+  assert.equal(bound.length, count)
+  assert.equal(reports.at(-1).status, "needs-video")
+})

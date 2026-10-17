@@ -1,10 +1,37 @@
 import { CHANNEL, isRequest, type Request } from "./lib/messages"
 import { validateVault } from "./lib/persistence"
+import { decodeInvitation } from "./lib/room-protocol"
 import { handleBindingMessage } from "./lib/bindings"
+import { applySourceState, bindSourceTab, closeSource, focusSource, refreshSource, selectLocalSource } from "./lib/source-viewer"
 
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || message?.channel !== CHANNEL || message.to !== "background") return
+  if (message.type === "source-state") {
+    if (sender.tab || sender.url !== chrome.runtime.getURL("tabs/offscreen.html")) return
+    void applySourceState(message.value).then(() => respond({ ok: true }), () => respond({ ok: false }))
+    return true
+  }
+  if (message.type === "source-refresh" && sender.tab?.id !== undefined) {
+    void refreshSource(sender.tab.id).then(data => respond({ ok: true, data }), () => respond({ ok: false }))
+    return true
+  }
+  if (message.type === "source-focus" && !sender.tab) {
+    void focusSource().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Вкладка недоступна" }))
+    return true
+  }
+  if (message.type === "source-attach" && !sender.tab) {
+    void (async () => {
+      // Capture once at the explicit action, never infer a tab from later activity.
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+      if (tab?.id === undefined) throw new Error("Текущая вкладка недоступна")
+      await ensureOffscreen()
+      const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "offscreen", type: "room", command: { kind: "status" } })
+      if (!reply?.ok || !reply.data.invitation) throw new Error("Сначала подключись к комнате")
+      return bindSourceTab(tab.id, decodeInvitation(reply.data.invitation).roomId)
+    })().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Вкладка недоступна" }))
+    return true
+  }
   if (message.type === "vault") {
     if (sender.tab || sender.url !== chrome.runtime.getURL("tabs/offscreen.html")) return
     void (async () => {
@@ -39,6 +66,8 @@ chrome.runtime.onInstalled.addListener(() => { void recoverSession().catch(() =>
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === "wtg-recover") void recoverSession().catch(() => {}) })
 void chrome.alarms.create("wtg-recover", { periodInMinutes: 1 })
 void recoverSession().catch(() => {})
+chrome.tabs.onRemoved.addListener(tabId => { void closeSource(tabId).catch(() => {}) })
+chrome.webNavigation.onCompleted.addListener(details => { void refreshSource(details.tabId).catch(() => {}) })
 
 let creating: Promise<void> | undefined
 async function ensureOffscreen() {
@@ -62,8 +91,15 @@ async function ensureOffscreen() {
 async function handle(message: Request) {
   if (message.to !== "background") throw new Error("Invalid destination")
   if (message.type === "room") {
+    const entering = message.command.kind === "create" || message.command.kind === "join"
+    const [tab] = entering ? await chrome.tabs.query({ active: true, lastFocusedWindow: true }) : []
+    if (entering && tab?.id === undefined) throw new Error("Не удалось определить вкладку просмотра")
     await ensureOffscreen()
-    return chrome.runtime.sendMessage({ ...message, to: "offscreen" })
+    const reply = await chrome.runtime.sendMessage({ ...message, to: "offscreen" })
+    if (entering && reply?.ok && reply.data.invitation && tab?.id !== undefined) {
+      await bindSourceTab(tab.id, decodeInvitation(reply.data.invitation).roomId)
+    }
+    return reply
   }
   if (message.type === "video-selected" || message.type === "cancel-picking") throw new Error("Frame sender required")
   if (message.type === "tab-videos") {
@@ -105,6 +141,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || !isRequest(message) || message.to !== "background") return
   if ((message.type === "video-selected" || message.type === "cancel-picking") && sender.tab?.id !== undefined && sender.frameId !== undefined) {
     const tabId = sender.tab.id
+    if (message.type === "video-selected") void selectLocalSource(tabId, sender.frameId, message.selectedId).catch(() => {})
     void chrome.webNavigation.getAllFrames({ tabId }).then(frames => Promise.allSettled(
       (frames || []).filter(frame => frame.frameId !== sender.frameId).map(frame =>
         chrome.tabs.sendMessage(tabId, { channel: CHANNEL, to: "content", type: "video", action: { kind: message.type === "video-selected" ? "clear" : "cancel" } }, { frameId: frame.frameId }))

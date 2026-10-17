@@ -13,6 +13,14 @@ const compiled = ts.transpileModule(readFileSync(filename, "utf8"), {
 const protocol = new Module(filename, module)
 protocol.filename = filename
 protocol.paths = module.paths
+protocol.require = id => {
+  if (id !== "./source") return require(id)
+  const source = new Module(filename, module)
+  source._compile(ts.transpileModule(readFileSync(path.resolve(__dirname, "../lib/source.ts"), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
+  }).outputText, filename)
+  return source.exports
+}
 protocol._compile(compiled, filename)
 const { encodeInvitation, decodeInvitation, validShared, validRoomCommand } = protocol.exports
 

@@ -1,11 +1,13 @@
 import { joinRoom, selfId } from "trystero"
+import { commitSource, sourceRevision, validReadiness, type SourceCommand, type SourceReadiness } from "./source"
+import { validRoomCommand } from "./room-protocol"
 import { canAcceptMemberCommand, isAdmitted, policyText, validPolicy, type MemberCommand, type MembershipPolicy } from "./membership"
 import { challengeText, createIdentity, sign, validateIdentity, verify } from "./identity"
 import { endText, validCertificate, validateVault, vaultRequest, type EndCertificate, type Vault } from "./persistence"
 import { decodeInvitation, encodeInvitation, validShared, type Invitation, type RoomCommand, type RoomView, type SharedState } from "./room-protocol"
 
 const empty = (): SharedState => ({ url: null, video: null, playback: { position: 0, paused: true, rate: 1 } })
-const idle = (): RoomView => ({ pendingParticipants: [], blockedKeys: [], approvalRequired: false, ready: false, isAdmin: false, status: "idle", selfId, adminId: null, invitation: null, participants: [], shared: empty(), error: null })
+const idle = (): RoomView => ({ sourceReadiness: {}, pendingParticipants: [], blockedKeys: [], approvalRequired: false, ready: false, isAdmin: false, status: "idle", selfId, adminId: null, invitation: null, participants: [], shared: empty(), error: null })
 const randomToken = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, "0")).join("")
 let vault: Vault
 let invite: Invitation | undefined
@@ -15,6 +17,11 @@ let view = idle()
 let timer: ReturnType<typeof setInterval> | undefined
 let sendMessage: ((kind: string, data?: object, target?: string) => Promise<unknown>) | undefined
 let manageMember: ((command: MemberCommand) => Promise<void>) | undefined
+let changeSource: ((command: SourceCommand) => Promise<void>) | undefined
+let reportSource: ((readiness: SourceReadiness) => Promise<void>) | undefined
+let observer: ((view: RoomView, roomId: string | null) => void) | undefined
+export function observeSource(callback: NonNullable<typeof observer>) { observer = callback }
+function notifySource() { observer?.(structuredClone(view), invite?.roomId || null) }
 let initialized: Promise<void> | undefined
 const tombstones = new Map<string, ReturnType<typeof joinRoom>>()
 let pending: Promise<unknown> = Promise.resolve()
@@ -33,6 +40,8 @@ async function disconnect() {
   timer = undefined
   sendMessage = undefined
   manageMember = undefined
+  changeSource = undefined
+  reportSource = undefined
   const previous = room
   room = undefined
   await previous?.leave()
@@ -46,6 +55,7 @@ async function applyEnd(certificate: EndCertificate) {
   invite = undefined
   view = { ...idle(), error: "Комната завершена создателем" }
   await save()
+  notifySource()
   startTombstone(archived)
   return true
 }
@@ -54,10 +64,10 @@ function startTombstone(certificate: EndCertificate) {
   if (!certificate.invitation || tombstones.has(certificate.roomId)) return
   const previous = decodeInvitation(certificate.invitation)
   if (previous.roomId !== certificate.roomId || previous.adminKey !== certificate.adminKey) return
-  const relay = joinRoom({ appId: "wtg-watch-together-v3", password: previous.secret }, previous.roomId)
+  const relay = joinRoom({ appId: "wtg-watch-together-v4", password: previous.secret }, previous.roomId)
   tombstones.set(previous.roomId, relay)
   const action = relay.makeAction("wtg-state")
-  const announce = (peerId: string) => action.send({ version: 3, roomId: previous.roomId, id: crypto.randomUUID(), sequence: 1, kind: "ended", certificate }, { target: peerId }).catch(() => {})
+  const announce = (peerId: string) => action.send({ version: 4, roomId: previous.roomId, id: crypto.randomUUID(), sequence: 1, kind: "ended", certificate }, { target: peerId }).catch(() => {})
   relay.onPeerJoin = peerId => { void announce(peerId) }
 }
 
@@ -73,7 +83,7 @@ async function connect(retryDelay = 30000) {
     vault.policies = [...vault.policies || [], policy]
     await save()
   }
-  view = { ...view, pendingParticipants: [], blockedKeys: isAdmin ? policy?.blocked || [] : [], approvalRequired: policy?.approvalRequired || false, ready: isAdmin, isAdmin, adminId: isAdmin ? selfId : null, status: "waiting", participants: isAdmin ? [selfId] : [], invitation: encodeInvitation(current), error: null }
+  view = { ...view, sourceReadiness: {}, pendingParticipants: [], blockedKeys: isAdmin ? policy?.blocked || [] : [], approvalRequired: policy?.approvalRequired || false, ready: isAdmin, isAdmin, adminId: isAdmin ? selfId : null, status: "waiting", participants: isAdmin ? [selfId] : [], invitation: encodeInvitation(current), error: null }
   let sequence = 0, lastAdminSeen = Date.now(), nextRetry = Date.now() + retryDelay
   const challenges = new Map<string, { nonce: string; expires: number }>()
   const authenticated = new Map<string, string>()
@@ -81,13 +91,13 @@ async function connect(retryDelay = 30000) {
   const rates = new Map<string, { start: number; count: number }>()
   const seen = new Map<string, string[]>()
   try {
-    room = joinRoom({ appId: "wtg-watch-together-v3", password: current.secret }, current.roomId, {
+    room = joinRoom({ appId: "wtg-watch-together-v4", password: current.secret }, current.roomId, {
       onJoinError: () => { if (epoch === generation) view = { ...view, status: "error", error: "Соединение не установлено. Повторяем автоматически; в некоторых сетях нужен TURN." } }
     })
     const transport = room, action = transport.makeAction("wtg-state")
     const send = async (kind: string, data: object = {}, target?: string) => {
       if (epoch !== generation) return
-      await action.send({ version: 3, roomId: current.roomId, id: crypto.randomUUID(), sequence: ++sequence, kind, ...data }, target ? { target } : undefined)
+      await action.send({ version: 4, roomId: current.roomId, id: crypto.randomUUID(), sequence: ++sequence, kind, ...data }, target ? { target } : undefined)
     }
     sendMessage = send
     const updateMembers = () => {
@@ -105,7 +115,7 @@ async function connect(retryDelay = 30000) {
       if (!isAdmin) view.participants = view.participants.filter(id => isAdmitted(next, memberKeys[id]))
       view.approvalRequired = next.approvalRequired
       if (next.blocked.includes(identity.publicKey)) {
-        await disconnect(); invite = undefined; view = { ...idle(), error: "Вы удалены администратором" }; await save(); return false
+        await disconnect(); invite = undefined; view = { ...idle(), error: "Вы удалены администратором" }; await save(); notifySource(); return false
       }
       return true
     }
@@ -113,14 +123,43 @@ async function connect(retryDelay = 30000) {
       if (!isAdmin || !policy) return
       updateMembers()
       view.status = view.participants.length > 1 ? "connected" : "waiting"
+      view.sourceReadiness = Object.fromEntries(Object.entries(view.sourceReadiness).filter(([id]) => view.participants.includes(id)))
+      notifySource()
       // Admission policy is a separate bounded packet, signed for mesh propagation.
       await send("policy", { policy }, target)
       const recipients = target ? [target] : [...authenticated.keys()]
       for (const id of recipients) {
         if (isAdmitted(policy, authenticated.get(id) || "")) {
-          await send("snapshot", { shared: view.shared, participants: view.participants, memberKeys: Object.fromEntries([[selfId, identity.publicKey], ...[...authenticated].filter(([id]) => view.participants.includes(id))]), policyRevision: policy.revision }, id)
+          await send("snapshot", { shared: view.shared, sourceReadiness: view.sourceReadiness, participants: view.participants, memberKeys: Object.fromEntries([[selfId, identity.publicKey], ...[...authenticated].filter(([id]) => view.participants.includes(id))]), policyRevision: policy.revision }, id)
         }
       }
+    }
+    const acceptedCommands = new Set<string>()
+    const acceptSource = async (command: SourceCommand, peerId: string) => {
+      const key = `${authenticated.get(peerId) || identity.publicKey}:${command.commandId}`
+      if (acceptedCommands.has(key)) { await snapshot(peerId === selfId ? undefined : peerId); return }
+      view.shared = commitSource(view.shared, command)
+      view.sourceReadiness = {}
+      view.error = null
+      acceptedCommands.add(key)
+      if (acceptedCommands.size > 128) acceptedCommands.delete(acceptedCommands.values().next().value!)
+      await save()
+      notifySource()
+      await snapshot()
+    }
+    changeSource = async command => {
+      if (!view.ready) throw new Error("Дождитесь подключения к администратору")
+      if (isAdmin) await acceptSource(command, selfId)
+      else {
+        if (!view.adminId) throw new Error("Администратор недоступен")
+        await send("source-request", { command }, view.adminId)
+      }
+    }
+    reportSource = async readiness => {
+      if (!view.ready || readiness.revision !== sourceRevision(view.shared)) return
+      view.sourceReadiness[selfId] = readiness
+      if (isAdmin) await snapshot()
+      else if (view.adminId) await send("source-ready", { readiness }, view.adminId)
     }
     manageMember = async command => {
       if (!isAdmin || !policy || epoch !== generation) throw new Error("Только администратор может менять допуск")
@@ -152,7 +191,7 @@ async function connect(retryDelay = 30000) {
       if (!rate || now - rate.start > 1000) rates.set(peerId, { start: now, count: 1 })
       else if (++rate.count > 20) return
       const m = value as Record<string, unknown>
-      if (m.version !== 3) { view.error = "У участника несовместимая версия протокола"; return }
+      if (m.version !== 4) { view.error = "У участника несовместимая версия протокола"; return }
       if (m.roomId !== current.roomId || typeof m.id !== "string" || m.id.length > 64 || !Number.isSafeInteger(m.sequence)) return
       const ids = seen.get(peerId) || []
       if (ids.includes(m.id)) return
@@ -161,6 +200,15 @@ async function connect(retryDelay = 30000) {
       // shared commands must pass this membership gate, including mesh traffic.
       if (!["challenge", "proof", "hello", "policy", "snapshot", "ended"].includes(String(m.kind)) &&
         !canAcceptMemberCommand(policy, authenticated.get(peerId), peerId, view.participants, view.ready)) return
+      if (m.kind === "source-request" && isAdmin && validRoomCommand(m.command) && m.command.kind === "source") {
+        try { await acceptSource(m.command, peerId) }
+        catch (error) { await send("source-rejected", { error: error instanceof Error ? error.message : "Источник не принят" }, peerId) }
+      }
+      if (m.kind === "source-rejected" && authenticated.get(peerId) === current.adminKey && typeof m.error === "string") view.error = m.error.slice(0, 200)
+      if (m.kind === "source-ready" && isAdmin && validReadiness(m.readiness) && m.readiness.revision === sourceRevision(view.shared)) {
+        view.sourceReadiness[peerId] = m.readiness
+        await snapshot()
+      }
       if (m.kind === "challenge" && typeof m.nonce === "string" && /^[a-f0-9]{48}$/.test(m.nonce)) {
         await send("proof", { nonce: m.nonce, publicKey: identity.publicKey, signature: await sign(identity, challengeText(current.roomId, peerId, selfId, m.nonce)) }, peerId)
         await challenge(peerId)
@@ -190,12 +238,15 @@ async function connect(retryDelay = 30000) {
         if (!await publishPolicy(m.policy)) return
       }
       if (m.kind === "snapshot" && authenticated.get(peerId) === current.adminKey && isAdmitted(policy, identity.publicKey) && m.policyRevision === policy?.revision && validShared(m.shared) && Array.isArray(m.participants) && m.participants.length <= 100 && m.participants.every(p => typeof p === "string" && p.length <= 128) && m.memberKeys && typeof m.memberKeys === "object" && m.participants.every(id => isAdmitted(policy, (m.memberKeys as Record<string, string>)[id]))) {
+        if (sourceRevision(m.shared) < sourceRevision(view.shared)) return
         memberKeys = m.memberKeys as Record<string, string>
         lastAdminSeen = now
         retryDelay = 30000
         nextRetry = now + retryDelay
         view = { ...view, ready: true, status: "connected", adminId: peerId, error: null, shared: m.shared, participants: [...new Set([selfId, peerId, ...m.participants])] }
+        if (m.sourceReadiness && typeof m.sourceReadiness === "object") view.sourceReadiness = Object.fromEntries(Object.entries(m.sourceReadiness).filter(([id, state]) => view.participants.includes(id) && validReadiness(state) && state.revision === sourceRevision(view.shared)))
         await save()
+        notifySource()
       }
       if (m.kind === "policy" && !isAdmin && authenticated.get(peerId) === current.adminKey && !isAdmitted(policy, identity.publicKey)) {
         lastAdminSeen = now
@@ -214,7 +265,7 @@ async function connect(retryDelay = 30000) {
       void serialized(async () => {
         if (epoch !== generation) return
         authenticated.delete(peerId); challenges.delete(peerId); rates.delete(peerId); seen.delete(peerId)
-        if (view.adminId === peerId) { view.adminId = null; view.ready = false; view.status = "reconnecting"; view.error = "Ожидаем возвращения администратора" }
+        if (view.adminId === peerId) { view.adminId = null; view.ready = false; view.status = "reconnecting"; view.error = "Ожидаем возвращения администратора"; notifySource() }
         if (isAdmin) await snapshot()
       }).catch(() => {})
     }
@@ -223,7 +274,7 @@ async function connect(retryDelay = 30000) {
       if (isAdmin) await snapshot()
       else {
         if (view.adminId) await send("hello", {}, view.adminId)
-        if (Date.now() - lastAdminSeen > 15000) { view.ready = false; view.status = "reconnecting"; view.error = "Ожидаем возвращения администратора" }
+        if (Date.now() - lastAdminSeen > 15000) { view.ready = false; view.status = "reconnecting"; view.error = "Ожидаем возвращения администратора"; notifySource() }
         if (!view.ready && view.error !== "Ожидаем допуска администратора" && Date.now() >= nextRetry) {
           // Trystero retries signaling too; periodic rebuild recovers stale transports.
           await connect(Math.min(retryDelay * 2, 300000))
@@ -234,6 +285,7 @@ async function connect(retryDelay = 30000) {
     await disconnect()
     view = { ...view, status: "error", error: error instanceof Error ? error.message : "Ошибка подключения" }
   }
+  notifySource()
 }
 
 export function initializeRoom() {
@@ -262,9 +314,10 @@ export function initializeRoom() {
 export function roomCommand(command: RoomCommand): Promise<RoomView> {
   return serialized(async () => {
     await initializeRoom()
+    if (command.kind === "status") notifySource()
     if (command.kind === "status" && invite && !room) await connect(60000)
     if (command.kind === "leave") {
-      await disconnect(); invite = undefined; view = idle(); await save()
+      await disconnect(); invite = undefined; view = idle(); await save(); notifySource()
     }
     if (command.kind === "create" || command.kind === "join") {
       if (invite) throw new Error("Сначала выйдите из текущей комнаты")
@@ -276,6 +329,11 @@ export function roomCommand(command: RoomCommand): Promise<RoomView> {
       await connect()
     }
     if (command.kind === "retry") await connect()
+    if (command.kind === "source") {
+      if (!changeSource || !validRoomCommand(command)) throw new Error("Источник недоступен")
+      await changeSource(command)
+    }
+    if (command.kind === "source-ready" && reportSource) await reportSource(command.readiness)
     if (command.kind === "remove" || command.kind === "approve" || command.kind === "readmit") {
       if (!view.isAdmin || !manageMember) throw new Error("Только администратор может управлять участниками")
       await manageMember(command)
