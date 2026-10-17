@@ -37,16 +37,16 @@ Refreshing a video page restores its saved binding and position on pause when
 the player is accessible. Identical tabs/ambiguous frames require manual selection.
 Storage schema/key errors stop recovery rather than silently replacing identity.
 
-Any admitted participant can change the shared URL or use “Выбрать для группы” on a
+Any admitted participant can change the shared URL or use “Выбрать для всех” on a
 video card. The coordinator orders changes with source revisions. Creating or
 joining a room binds the tab active at that action as your viewing tab. Shared
 URLs navigate only that tab; matching URLs do not reload. Switching to another
 tab does not move the binding. No new tabs are created automatically.
-“Привязать у меня” and
+“Это мой плеер” (shown when local binding is unconfirmed) and
 on-page selection only map a local player, useful when the shared selector does
 not match a personalized page. Local mappings reset when the shared source changes.
 
-“Открыть мою вкладку просмотра” activates the bound tab; “Назначить эту вкладку для просмотра” explicitly
+“К вкладке просмотра” activates the bound tab when elsewhere; “Перенести в эту вкладку” explicitly
 transfers viewing to your current tab. After closing the viewing tab, bind another
 one explicitly: even a new shared source does not pick an unrelated tab. Worker
 restart retains the binding; after a full Chrome restart bind a tab again. Legacy
@@ -66,11 +66,11 @@ prototype. Test on different networks before relying on it.
 
 ### Shared playback (prototype)
 
-After selecting a room video, use common play/pause/seek/speed controls in the
-popup or the native player controls. Volume and mute remain local. Play prepares
+After selecting a room video, use the native player's play/pause/seek/speed
+controls; the popup does not duplicate them. Volume and mute remain local. Play prepares
 the player positions and waits up to five seconds before scheduling a common
 future start; pause cancels preparation immediately. Clock offset/RTT estimates
-and per-player preparation/errors are shown in the popup.
+are under popup diagnostics; readiness/errors share the single participant list.
 
 If Chrome blocks autoplay, click “Разрешить воспроизведение” on the video page.
 This unlocks only the local player and catches it up with the shared timeline.

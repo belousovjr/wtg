@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { VideoPicker } from "./components/video-picker"
 import { RoomPanel } from "./components/room-panel"
 import { CHANNEL, sendRequest, type RuntimeStatus, type FrameStatus } from "./lib/messages"
 
@@ -30,7 +29,7 @@ function IndexPopup() {
       }}>
       <h2>Watch Together</h2>
       <RoomPanel />
-      <VideoPicker />
+      <details style={{ marginTop: 16 }}><summary>Диагностика расширения</summary>
       <button disabled={busy} onClick={check}>{busy ? "Проверяем…" : "Проверить подключение к странице"}</button>
       {status && <div>
         <p>WebRTC: {status.webRtcAvailable ? "доступен" : "недоступен"}</p>
@@ -39,6 +38,7 @@ function IndexPopup() {
       </div>}
       {page && <p>Страница отвечает: {page.title || page.url}</p>}
       {error && <p role="alert">{error}. Для обычной страницы попробуй обновить вкладку.</p>}
+      </details>
     </div>
   )
 }

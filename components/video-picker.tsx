@@ -3,7 +3,6 @@ import { CHANNEL, sendRequest } from "../lib/messages"
 import type { TabVideos, VideoAction, VideoDescriptor, VideoSnapshot } from "../lib/video"
 import { decodeInvitation, type RoomView } from "../lib/room-protocol"
 import { sameVideoSelection, sourceRevision } from "../lib/source"
-import { GroupPlayerStatus } from "./group-player-status"
 
 export function VideoPicker() {
   const [tabId, setTabId] = useState<number>()
@@ -100,13 +99,14 @@ export function VideoPicker() {
     frame.snapshot.roomBinding?.roomId === roomId && frame.snapshot.roomBinding?.revision === sourceRevision(room.shared) &&
     frame.snapshot.binding === "bound" && frame.snapshot.selectedId === frame.snapshot.roomBinding.videoId && (!id || id === frame.snapshot.roomBinding.videoId)
   return <section>
-    <h3>Видео на странице ({count})</h3>
+    <h4>{room?.shared.video ? "Видео выбрано для группы" : "Выбери видео для группы"}</h4>
+    {room?.shared.video && <p>{data?.frames.flatMap(frame => frame.snapshot.videos).find(video => sameVideoSelection(video.descriptor, room.shared.video))?.label || "Общий плеер"} · {data?.frames.some(frame => locallyBound(frame)) ? "✓ Привязан у тебя" : "Привязка на этой странице не подтверждена"}</p>}
     {pending && <p role="status">⏳ Применяем выбор для комнаты…</p>}
     {!pending && notice && <p role="status">{notice}</p>}
-    {room?.invitation && <GroupPlayerStatus room={room} />}
-    <button disabled={busy || !data?.frames.length} onClick={pick}>Выбрать плеер у меня на странице</button>{" "}
-    <button onClick={() => void refresh()}>Обновить</button>
-    <p>Наведи на плеер и нажми. Escape — отмена. После выбора открой расширение снова.</p>
+    <details open={!room?.shared.video || (room.sourceReadiness[room.selfId]?.status === "needs-video")}><summary>{room?.shared.video ? "Сменить плеер / исправить привязку" : `Доступные плееры (${count})`}</summary>
+    <details><summary>Выбрать на странице вместо списка</summary>
+    <button disabled={busy || !data?.frames.length} onClick={pick}>Указать мой плеер</button>
+    <p>Локальная привязка: наведи на плеер и нажми. Escape — отмена. Затем открой расширение снова; общий выбор меняется кнопкой «Выбрать для всех».</p></details>
     {data?.frames.map(frame => <div key={frame.frameId}>
       {!locallyBound(frame) && frame.snapshot.notice && <p role="status">{frame.snapshot.notice}</p>}
       {!locallyBound(frame) && (frame.snapshot.binding === "missing" || frame.snapshot.binding === "ambiguous") ? <p role="status">Привязка на этой странице потеряна. Выбери плеер у себя.</p> : null}
@@ -118,34 +118,29 @@ export function VideoPicker() {
         {locallyBound(frame, video.id) ? <p style={{ color: "#166534", fontWeight: 700 }}>✓ Привязан у тебя</p> : frame.snapshot.selectedId === video.id ? <p>Выбран локально · привязка к группе не подтверждена</p> : null}
         {video.poster && <img src={video.poster} alt="" referrerPolicy="no-referrer" style={{ maxWidth: "100%", maxHeight: 100 }} />}
         <strong>{video.label}</strong>
-        <div style={{ overflowWrap: "anywhere", marginTop: 8 }}>
-          {room?.ready && room.shared.video ? <>
-            <small>Общий CSS-селектор группы (ревизия {sourceRevision(room.shared)}):</small><br />
-            <code style={{ userSelect: "text" }}>{room.shared.video.selector}</code>
-            {!!room.shared.video.shadowPath.length && <p><small>Путь через Shadow DOM: </small><code>{room.shared.video.shadowPath.join(" → ")}</code></p>}
-            <details>
-              <summary>Контекст общего селектора</summary>
-              <small>Страница: {room.shared.video.pageUrl}<br />
-                Фрейм: {room.shared.video.frameUrl}<br />
-                Путь фреймов (URL): {room.shared.video.framePath.join(" → ") || "Основная страница"}</small>
-            </details>
-            <small>Это общий ориентир для поиска, не подтверждение привязки этого плеера.</small>
-          </> : <small>Общий селектор пока не выбран.</small>}
           <details>
             <summary>Локальный селектор этой карточки</summary>
             <code>{video.descriptor.selector}</code>
             {!!video.descriptor.shadowPath.length && <p><small>Shadow DOM: </small><code>{video.descriptor.shadowPath.join(" → ")}</code></p>}
           </details>
-        </div>
         <p>{video.width}×{video.height} · {video.duration === null ? "Длительность неизвестна / live" : `${Math.floor(video.duration / 60)}:${String(Math.floor(video.duration % 60)).padStart(2, "0")}`} · {video.readyState < 2 ? "Загружается" : video.paused ? "Пауза" : "Играет"}</p>
         <small>{frame.frameId === 0 ? "Основная страница" : `Фрейм: ${frame.url}`}</small><br />
-        <button disabled={locallyBound(frame, video.id)} onClick={() => void action(frame.frameId, { kind: "select", id: video.id })}>{locallyBound(frame, video.id) ? "✓ Привязан у тебя" : "Привязать у меня"}</button>{" "}
-        <button disabled={busy || !!pending} onClick={() => void share(video)}>{pending && sameVideoSelection(pending.video, video.descriptor) ? "Применяем выбор…" : "Выбрать для группы"}</button>
-        <p><small>«Привязать у меня» исправляет только твой плеер. «Выбрать для группы» меняет общее видео.</small></p>
+        {room?.shared.video && !data?.frames.some(f => locallyBound(f)) && <p><button onClick={() => void action(frame.frameId, { kind: "select", id: video.id })}>Это мой плеер</button><br /><small>Только локальная привязка, без смены видео группы.</small></p>}
+        <button disabled={busy || !!pending || !room?.ready} onClick={() => void share(video)}>{pending && sameVideoSelection(pending.video, video.descriptor) ? "Применяем выбор…" : "Выбрать для всех"}</button>
       </article>)}
     </div>)}
     {data && !count && <p>Доступные видео не найдены. Запусти плеер или обнови страницу. Закрытые Shadow DOM недоступны.</p>}
-    {!!data?.unavailableFrames && <details><summary>Диагностика страницы</summary><p>Недоступных фреймов: {data.unavailableFrames}. Это могут быть реклама или другие встраиваемые блоки; статус плеера группы указан выше.</p></details>}
+    </details>
+    <details><summary>Диагностика плеера</summary>
+      <button onClick={() => void refresh()}>Обновить список</button>
+      {room?.shared.video && <div style={{ overflowWrap: "anywhere" }}>
+        <p>Общий CSS-селектор · ревизия {sourceRevision(room.shared)}: <code>{room.shared.video.selector}</code></p>
+        <p>Shadow DOM: <code>{room.shared.video.shadowPath.join(" → ") || "нет"}</code></p>
+        <p>Фрейм: {room.shared.video.frameUrl}</p>
+        <p>Путь фреймов (URL): {room.shared.video.framePath.join(" → ") || "Основная страница"}</p>
+      </div>}
+      <p>Недоступных фреймов: {data?.unavailableFrames ?? "—"}.</p>
+    </details>
     {error && <p role="alert">{error}</p>}
     {room?.error && room.error !== error && <p role="alert">{room.error}</p>}
   </section>

@@ -4,7 +4,8 @@ import type { RoomCommand, RoomView, SharedState } from "../lib/room-protocol"
 import type { TabVideos } from "../lib/video"
 import { LoadingStatus } from "./loading-status"
 import { SourceControls } from "./source-controls"
-import { PlaybackControls } from "./playback-controls"
+import { VideoPicker } from "./video-picker"
+import { GroupPlayerStatus } from "./group-player-status"
 
 const labels: Record<RoomView["status"], string> = {
   idle: "Не в комнате", waiting: "Ожидание участников", connected: "Подключено",
@@ -16,6 +17,7 @@ export function RoomPanel() {
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
   const request = (command: RoomCommand) => sendRequest<RoomView>({ channel: CHANNEL, to: "background", type: "room", command })
   useEffect(() => {
     let active = true
@@ -48,8 +50,8 @@ export function RoomPanel() {
     finally { setBusy(false) }
   }
   async function copy() {
-    try { await navigator.clipboard.writeText(room!.invitation!); setCopied(true) }
-    catch { setError("Не удалось скопировать. Выдели приглашение и скопируй вручную.") }
+    try { await navigator.clipboard.writeText(room!.invitation!); setCopied(true); setCopyFailed(false) }
+    catch { setCopyFailed(true); setError("Не удалось скопировать. Скопируй приглашение из поля ниже.") }
   }
   return <section style={{ borderBottom: "1px solid #ddd", paddingBottom: 16 }}>
     <h3>Комната</h3>
@@ -63,11 +65,7 @@ export function RoomPanel() {
       <button disabled={busy || !invitation.trim()} onClick={() => void perform({ kind: "join", invitation })}>Присоединиться</button>
     </> : room && room.status !== "idle" && <>
       {room.ready && <>
-      <p>Участники: {room.participants.length}</p>
-      <ul>{room.participants.map(id => <li key={id}>
-        {id.slice(0, 8)}{id === room.selfId ? " · ты" : ""}{id === room.adminId ? " · админ" : ""}
-        {room.isAdmin && id !== room.selfId && <button disabled={busy} onClick={() => void perform({ kind: "remove", peerId: id })}>Удалить</button>}
-      </li>)}</ul>
+      <GroupPlayerStatus room={room} busy={busy} remove={id => void perform({ kind: "remove", peerId: id })} />
       {room.isAdmin && room.approvalRequired && <p>Новые участники входят после твоего подтверждения.</p>}
       {room.isAdmin && room.pendingParticipants.length > 0 && <div>
         <h4>Ожидают допуска</h4>
@@ -81,14 +79,20 @@ export function RoomPanel() {
           <button disabled={busy} onClick={() => void perform({ kind: "readmit", publicKey: key })}>Разрешить снова</button>
         </li>)}</ul>
       </details>}
-      <textarea aria-label="Приглашение комнаты" readOnly value={room.invitation || ""} style={{ width: "100%", boxSizing: "border-box" }} />
-      <button onClick={copy}>{copied ? "Скопировано" : "Поделиться комнатой"}</button>{" "}
+      {copyFailed && <textarea aria-label="Приглашение комнаты" readOnly value={room.invitation || ""} style={{ width: "100%", boxSizing: "border-box" }} />}
+      <button onClick={copy}>{copied ? "Скопировано" : "Пригласить"}</button>{" "}
       </>}
+      <details><summary aria-label="Меню комнаты">⋯ Комната</summary>
       <button disabled={busy} onClick={() => void perform({ kind: "leave" })}>Выйти</button>
-      {room.isAdmin && <button disabled={busy} onClick={() => void perform({ kind: "end" })}>Завершить комнату</button>}
-      {(room.status === "error" || room.status === "reconnecting" || room.status === "waiting") && <p><button disabled={busy} onClick={() => void perform({ kind: "retry" })}>Повторить подключение</button></p>}
+      {room.isAdmin && <button disabled={busy} onClick={() => { if (window.confirm("Завершить комнату для всех?")) void perform({ kind: "end" }) }}>Завершить комнату</button>}
+      </details>
+      {(room.status === "error" || room.status === "reconnecting") && <p><button disabled={busy} onClick={() => void perform({ kind: "retry" })}>Повторить подключение</button></p>}
       {room.ready && <SourceControls room={room} perform={perform} busy={busy} />}
-      {room.ready && <PlaybackControls room={room} perform={perform} busy={busy} />}
+      {room.ready && <VideoPicker />}
+      {room.ready && <details><summary>Диагностика синхронизации</summary>
+        <p>{room.sync?.preparation ? "Подготовка общего запуска" : room.sync?.command ? room.sync.command.paused ? "Общая пауза" : "Общий таймлайн воспроизведения" : "Ожидаем команды плеера"}</p>
+        {room.sync?.clock && <p>RTT {Math.round(room.sync.clock.rtt)} мс · неопределённость ±{Math.round(room.sync.clock.uncertainty)} мс</p>}
+      </details>}
     </>}
     {(error || room?.error) && <p role="alert">{error || room?.error}</p>}
   </section>
