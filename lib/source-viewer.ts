@@ -123,6 +123,8 @@ export function bindSourceTab(tabId: number, roomId: string, onlyIfMatching = fa
     await load()
     const tab = await chrome.tabs.get(tabId)
     if (onlyIfMatching) {
+      const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+      if (active?.id !== tabId) return viewer
       if (!state?.ready || state.roomId !== roomId || !state.shared.url || !sameFrameLocation(tab.url || "", state.shared.url)) return viewer
       if (viewer?.roomId === roomId && !viewer.closed) {
         const existing = await chrome.tabs.get(viewer.tabId).catch(() => undefined)
@@ -138,6 +140,13 @@ export function bindSourceTab(tabId: number, roomId: string, onlyIfMatching = fa
     if (state?.roomId === roomId) await reconcile()
     return viewer
   })
+}
+export async function autoBindActiveSource() {
+  if (!state?.ready || !state.roomId || !state.shared.url) return
+  const roomId = state.roomId
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+  if (tab?.id === undefined) return
+  return bindSourceTab(tab.id, roomId, true)
 }
 export function focusSource() {
   return serial(async () => {

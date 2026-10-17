@@ -2,7 +2,7 @@ import { CHANNEL, isRequest, type Request } from "./lib/messages"
 import { validateVault } from "./lib/persistence"
 import { decodeInvitation } from "./lib/room-protocol"
 import { handleBindingMessage } from "./lib/bindings"
-import { applySourceState, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, selectLocalSource } from "./lib/source-viewer"
+import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, selectLocalSource } from "./lib/source-viewer"
 
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   if (message.type === "source-state") {
     if (sender.tab || sender.url !== chrome.runtime.getURL("tabs/offscreen.html")) return
-    void applySourceState(message.value).then(() => respond({ ok: true }), () => respond({ ok: false }))
+    void applySourceState(message.value).then(async () => { await autoBindActiveSource(); respond({ ok: true }) }, () => respond({ ok: false })).catch(() => respond({ ok: false }))
     return true
   }
   if (message.type === "source-refresh" && sender.tab?.id !== undefined) {
@@ -74,7 +74,14 @@ chrome.runtime.onInstalled.addListener(() => { void recoverSession().catch(() =>
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === "wtg-recover") void recoverSession().catch(() => {}) })
 void chrome.alarms.create("wtg-recover", { periodInMinutes: 1 })
 void recoverSession().catch(() => {})
-chrome.tabs.onRemoved.addListener(tabId => { void closeSource(tabId).catch(() => {}) })
+chrome.tabs.onRemoved.addListener(tabId => { void closeSource(tabId).then(() => autoBindActiveSource()).catch(() => {}) })
+chrome.tabs.onActivated.addListener(() => { void autoBindActiveSource().catch(() => {}) })
+chrome.tabs.onUpdated.addListener((_tabId, change) => {
+  if (change.url || change.status === "complete") void autoBindActiveSource().catch(() => {})
+})
+chrome.windows.onFocusChanged.addListener(windowId => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) void autoBindActiveSource().catch(() => {})
+})
 chrome.webNavigation.onCompleted.addListener(details => { void refreshSource(details.tabId).catch(() => {}) })
 
 let creating: Promise<void> | undefined

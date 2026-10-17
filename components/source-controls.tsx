@@ -17,14 +17,6 @@ export function SourceControls({ room }: { room: RoomView }) {
       const belongs = !!room.invitation && viewer?.roomId === decodeInvitation(room.invitation).roomId
       const viewingTab = belongs && viewer?.boundByUser && !viewer.closed ? await chrome.tabs.get(viewer.tabId).catch(() => undefined) : undefined
       if (!active) return
-      if (!viewingTab && room.shared.url && sameFrameLocation(tabs[0]?.url || "", room.shared.url)) {
-        const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "source-auto-attach" })
-        if (!active) return
-        if (reply?.ok && reply.data?.tabId === tabs[0]?.id) {
-          setHasViewingTab(true); setIsViewingTab(true); setWrongUrl(false)
-          return
-        }
-      }
       setWrongUrl(!!viewingTab && !!room.shared.url && !sameFrameLocation(viewingTab.url || "", room.shared.url))
       setHasViewingTab(!!viewingTab)
       setIsViewingTab(!!viewingTab && viewer.tabId === tabs[0]?.id)

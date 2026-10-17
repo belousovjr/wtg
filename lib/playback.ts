@@ -1,7 +1,7 @@
 export const now = () => performance.timeOrigin + performance.now()
 export type PlaybackRequest = { epoch: string; commandId: string; revision: number; action: "play" | "pause" | "seek" | "rate"; position: number; rate: number }
 export type Commit = { epoch: string; revision: number; sequence: number; commandId: string; executeAt: number; position: number; paused: boolean; rate: number }
-export type Preparation = { epoch: string; revision: number; id: string; position: number; rate: number; deadline: number }
+export type Preparation = { epoch: string; revision: number; id: string; commandId?: string; position: number; rate: number; deadline: number }
 export type PlayerReport = { epoch: string; revision: number; preparationId?: string; sequence?: number; status: "ready" | "loading" | "blocked" | "missing" | "error"; detail?: string; lateness?: number }
 export type ClockEstimate = { offset: number; rtt: number; uncertainty: number }
 export type PlaybackWire = { epoch: string; sequence: number; preparation: Preparation | null; command: Commit | null; players: Record<string, PlayerReport> }
@@ -21,7 +21,7 @@ export function validCommit(v: unknown): v is Commit {
 export function validPreparation(v: unknown): v is Preparation {
   if (!v || typeof v !== "object") return false
   const p = v as Preparation
-  return typeof p.epoch === "string" && p.epoch.length <= 64 && revision(p.revision) && typeof p.id === "string" && p.id.length <= 64 && finite(p.position) && p.position >= 0 && finite(p.rate) && p.rate >= 0.25 && p.rate <= 4 && finite(p.deadline)
+  return typeof p.epoch === "string" && p.epoch.length <= 64 && revision(p.revision) && typeof p.id === "string" && p.id.length <= 64 && (p.commandId === undefined || typeof p.commandId === "string" && p.commandId.length <= 64) && finite(p.position) && p.position >= 0 && finite(p.rate) && p.rate >= 0.25 && p.rate <= 4 && finite(p.deadline)
 }
 export function validPlayerReport(v: unknown): v is PlayerReport {
   if (!v || typeof v !== "object") return false
@@ -124,7 +124,7 @@ export class PlaybackSession {
       await this.commit(request, true, Math.min(250, startLead([...this.clocks.values()])))
     } else {
       this.preparationCommand = request
-      this.preparation = { epoch: this.epoch, revision: request.revision, id: crypto.randomUUID(), position: request.position, rate: request.rate, deadline: now() + 5000 }
+      this.preparation = { epoch: this.epoch, revision: request.revision, id: crypto.randomUUID(), commandId: request.commandId, position: request.position, rate: request.rate, deadline: now() + 5000 }
       this.players = {}
       await this.broadcast()
     }

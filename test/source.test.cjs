@@ -51,10 +51,11 @@ test("URL and descriptor validation rejects unsafe URLs and mismatched pages", (
 })
 test("viewer only navigates explicitly bound tabs, preserves matching URLs and requires rebinding after close", async () => {
   const session = {}, tabs = new Map([[1, { id: 1, url: shared.url, status: "complete" }], [99, { id: 99, url: "https://unrelated.example.com", status: "complete" }]]), reports = [], bound = [], navigations = []
-  let created = 0, missing = true
+  let created = 0, missing = true, activeTabId = 99
   global.chrome = {
     storage: { session: { get: async () => session, set: async value => Object.assign(session, value), remove: async key => { delete session[key] } } },
     tabs: {
+      query: async () => [tabs.get(activeTabId)].filter(Boolean),
       create: async () => { created++; throw Error("Must not create tabs") },
       get: async id => { if (!tabs.has(id)) throw Error("Missing"); return tabs.get(id) },
       update: async (id, data) => { if (data.url) navigations.push({ id, url: data.url }); Object.assign(tabs.get(id), data); return tabs.get(id) },
@@ -74,9 +75,14 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   assert.equal(reports.at(-1).status, "unavailable")
   await viewer.bindSourceTab(99, "room", true)
   assert.equal(session.sourceViewer, undefined) // Unrelated active page cannot auto-bind.
-  await viewer.bindSourceTab(1, "room", true)
+  await viewer.autoBindActiveSource()
+  assert.equal(session.sourceViewer, undefined)
+  activeTabId = 1
+  await viewer.autoBindActiveSource() // Background path needs no popup request.
+  assert.equal(session.sourceViewer.tabId, 1)
   tabs.get(99).url = shared.url
-  await viewer.bindSourceTab(99, "room", true)
+  activeTabId = 99
+  await viewer.autoBindActiveSource()
   assert.equal(session.sourceViewer.tabId, 1) // Never steal a live viewing tab.
   tabs.get(99).url = "https://unrelated.example.com"
   assert.equal(navigations.length, 0) // Already at the source: no reload.

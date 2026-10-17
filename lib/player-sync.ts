@@ -6,39 +6,53 @@ export class PlayerSync {
   private video?: HTMLVideoElement
   private timer?: ReturnType<typeof setTimeout>
   private seekTimer?: ReturnType<typeof setTimeout>
+  private pauseTimer?: ReturnType<typeof setTimeout>
   private applied = ""
   private scheduled = ""
   private prepared = ""
   private expectedPaused = true
   private expectedPosition = 0
-  private remoteSeekUntil = 0
+  private remoteSeekPending = false
   private expectedRate = 1
   private overlay?: HTMLDivElement
   private lastReport = ""
   private correctionTimer?: ReturnType<typeof setInterval>
   private pendingManual = false
   private userSeeking = false
+  private pendingSeekId?: string
   private correctionUntil = 0
+  private lastTrace = ""
   constructor(private getVideo: () => HTMLVideoElement | undefined, private send: (roomId: string, revision: number, message: EventMessage) => void) {}
   bind() {
     const video = this.getVideo()
     if (video === this.video) return
     clearTimeout(this.seekTimer)
-    this.pendingManual = false; this.userSeeking = false
+    clearTimeout(this.pauseTimer)
+    this.pendingManual = false; this.userSeeking = false; this.pendingSeekId = undefined
     if (this.video) { this.expectedPaused = true; this.video.pause() }
     for (const name of ["play", "pause", "seeking", "seeked", "ratechange", "canplay", "loadedmetadata"]) this.video?.removeEventListener(name, this.onEvent)
     this.video = video; this.applied = ""; this.prepared = ""; this.scheduled = ""
     clearTimeout(this.timer)
-    this.remoteSeekUntil = 0
+    this.remoteSeekPending = false
     for (const name of ["play", "pause", "seeking", "seeked", "ratechange", "canplay", "loadedmetadata"]) video?.addEventListener(name, this.onEvent)
     console.info("[WTG seek] Обработчики плеера", { attached: !!video, connected: !!video?.isConnected, activeContext: !!this.context })
     this.lastReport = ""
     if (!video) this.report("missing", "Плеер не найден")
   }
   update(roomId: string, revision: number, playback: PlaybackLocal | null) {
+    const trace = JSON.stringify([revision, playback?.epoch, playback?.command?.sequence, playback?.command?.paused, playback?.preparation?.id, this.pendingSeekId, this.userSeeking])
+    if (trace !== this.lastTrace) {
+      this.lastTrace = trace
+      console.info("[WTG playback] Состояние", { revision, sequence: playback?.command?.sequence, paused: playback?.command?.paused,
+        commandId: playback?.command?.commandId, preparationId: playback?.preparation?.id,
+        preparationCommandId: playback?.preparation?.commandId, pendingSeekId: this.pendingSeekId, userSeeking: this.userSeeking })
+    }
     if (!playback) {
+      this.pendingSeekId = undefined; this.userSeeking = false; this.pendingManual = false
+      this.remoteSeekPending = false
       clearInterval(this.correctionTimer); this.correctionTimer = undefined
       this.context = undefined; clearTimeout(this.timer); clearTimeout(this.seekTimer)
+      clearTimeout(this.pauseTimer)
       this.expectedPaused = true; this.video?.pause(); this.overlay?.remove(); this.overlay = undefined
       this.applied = ""; this.scheduled = ""; this.prepared = ""; this.lastReport = ""
       return
@@ -48,14 +62,24 @@ export class PlayerSync {
     if (playback.command && !validCommit(playback.command) || playback.preparation && !validPreparation(playback.preparation)) return
     if (this.context?.roomId !== roomId || this.context.revision !== revision || this.context.playback.epoch !== playback.epoch) {
       clearTimeout(this.timer); clearTimeout(this.seekTimer)
+      clearTimeout(this.pauseTimer)
       this.applied = ""; this.scheduled = ""; this.prepared = ""; this.lastReport = ""
       this.expectedPaused = true
+      this.pendingSeekId = undefined; this.userSeeking = false; this.pendingManual = false
       this.overlay?.remove(); this.overlay = undefined
     }
     if (this.context?.playback.command?.sequence !== playback.command?.sequence || this.context?.playback.preparation?.id !== playback.preparation?.id)
       this.pendingManual = false
     this.context = { roomId, revision, playback }
     this.bind()
+    if (this.pendingSeekId && (playback.preparation?.commandId === this.pendingSeekId || playback.command?.commandId === this.pendingSeekId)) {
+      this.pendingSeekId = undefined; this.pendingManual = false
+    }
+    // No snapshot, canplay callback or scheduled old command may undo an explicit seek.
+    if (this.userSeeking || this.pendingSeekId) {
+      console.info("[WTG playback] Применение отложено: ручная перемотка", { userSeeking: this.userSeeking, pendingSeekId: this.pendingSeekId })
+      return
+    }
     const video = this.video
     if (!video?.isConnected) { this.report("missing", "Плеер не найден"); return }
     const prep = playback.preparation
@@ -77,6 +101,7 @@ export class PlayerSync {
     clearTimeout(this.timer)
     const execute = () => {
       this.scheduled = ""
+      if (this.userSeeking || this.pendingSeekId) return
       if (this.context?.playback.command?.sequence !== command.sequence || this.context.playback.epoch !== command.epoch || this.context.playback.preparation) return
       const coordinatorTime = now() + this.context.playback.clock!.offset
       if (coordinatorTime < command.executeAt) {
@@ -84,25 +109,33 @@ export class PlayerSync {
         this.timer = setTimeout(execute, command.executeAt - coordinatorTime)
         return
       }
-      if (!this.seek(positionAt(command, coordinatorTime), command.rate)) return
+      if (!this.seek(positionAt(command, coordinatorTime), command.rate)) {
+        console.info("[WTG playback] Запуск отложен: позиция недоступна", { sequence: command.sequence, position: video.currentTime, readyState: video.readyState, seeking: video.seeking })
+        return
+      }
       this.expectedPaused = command.paused
       this.applied = id
       const late = Math.max(0, coordinatorTime - command.executeAt)
       if (command.paused) { video.pause(); this.overlay?.remove(); this.overlay = undefined; this.report("ready", undefined, late) }
-      else void video.play().then(() => {
+      else {
+        console.info("[WTG playback] Вызываем play()", { sequence: command.sequence, position: video.currentTime, readyState: video.readyState, seeking: video.seeking })
+        void video.play().then(() => {
+        console.info("[WTG playback] play() выполнен", { sequence: command.sequence, paused: video.paused, position: video.currentTime })
         if (this.context?.playback.command?.sequence === command.sequence && this.context.playback.epoch === command.epoch && !this.context.playback.preparation) this.report("ready", undefined, late)
       }, error => {
+        console.warn("[WTG playback] play() отклонён", { sequence: command.sequence, name: error?.name })
         if (this.context?.playback.command?.sequence !== command.sequence || this.context.playback.epoch !== command.epoch || this.context.playback.preparation) return
         this.report(error?.name === "NotAllowedError" ? "blocked" : "error", error?.name === "NotAllowedError" ? "Нажми «Разрешить воспроизведение» на странице" : "Браузер не смог запустить видео")
         if (error?.name === "NotAllowedError") this.showUnlock()
       })
+      }
     }
     this.timer = setTimeout(execute, Math.max(0, command.executeAt - playback.clock.offset - now()))
   }
   private correctDrift() {
     const c = this.context, video = this.video, command = c?.playback.command
     if (!c || !video?.isConnected || !command || !c.playback.clock || c.playback.preparation ||
-      command.revision !== c.revision || this.pendingManual || this.userSeeking || video.seeking ||
+      command.revision !== c.revision || this.pendingManual || this.pendingSeekId || this.userSeeking || video.seeking ||
       this.applied !== `${command.epoch}:${command.sequence}` || now() < this.correctionUntil) return
     if (video.readyState < 2) { this.report("loading", "Буферизация · догоним после загрузки"); return }
     if (!Number.isFinite(video.duration) || video.duration <= 0) return
@@ -135,7 +168,7 @@ export class PlayerSync {
     try {
       this.expectedPosition = target; this.expectedRate = rate
       video.playbackRate = rate
-      if (Math.abs(video.currentTime - target) > 0.04) { this.remoteSeekUntil = now() + 1000; video.currentTime = target }
+      if (Math.abs(video.currentTime - target) > 0.04) { this.remoteSeekPending = true; video.currentTime = target }
       return true
     } catch { this.report("error", "Плеер не разрешает перемотку"); return false }
   }
@@ -155,16 +188,29 @@ export class PlayerSync {
       console.info(`[WTG seek] ${event.type} перехвачен`, { position: video.currentTime, paused: video.paused, activeContext: !!c, revision: c?.revision })
     // Seeking is diagnostic only: broadcast the settled position once seeked arrives.
     if (event.type === "seeking") {
-      if (video && event.target === video) this.userSeeking = !(now() <= this.remoteSeekUntil && Math.abs(video.currentTime - this.expectedPosition) < 0.3)
+      if (video && event.target === video) {
+        this.userSeeking = !(this.remoteSeekPending && Math.abs(video.currentTime - this.expectedPosition) < 0.3)
+        if (this.userSeeking) this.remoteSeekPending = false
+      }
+      if (this.userSeeking) {
+        clearTimeout(this.pauseTimer)
+        clearTimeout(this.timer); this.scheduled = ""
+      }
       return
     }
     if (!c || !video || event.target !== video) return
     if (event.type === "canplay" || event.type === "loadedmetadata") { this.update(c.roomId, c.revision, c.playback); return }
     if (event.type === "play" || event.type === "pause") {
+      console.info("[WTG playback] Событие плеера", { type: event.type, paused: video.paused, expectedPaused: this.expectedPaused,
+        position: video.currentTime, seeking: video.seeking, readyState: video.readyState, pendingSeekId: this.pendingSeekId, userSeeking: this.userSeeking })
+      if (event.type === "play") clearTimeout(this.pauseTimer)
+      if (this.userSeeking || this.pendingSeekId) return
+      if (event.type === "pause" && (video.seeking || this.remoteSeekPending || c.playback.preparation)) return
       if (video.paused === this.expectedPaused) return
     } else if (event.type === "seeked") {
       this.userSeeking = false
-      if (now() <= this.remoteSeekUntil && Math.abs(video.currentTime - this.expectedPosition) < 0.3) {
+      if (this.remoteSeekPending && Math.abs(video.currentTime - this.expectedPosition) < 0.3) {
+        this.remoteSeekPending = false
         console.info("[WTG seek] Подавлено как эхо общей команды", { position: video.currentTime, expectedPosition: this.expectedPosition })
         if (c.playback.preparation && !video.seeking && video.readyState >= 2) this.report("ready")
         return
@@ -172,21 +218,29 @@ export class PlayerSync {
     } else if (event.type === "ratechange" && Math.abs(video.playbackRate - this.expectedRate) < 0.001) return
     this.pendingManual = true
     const request: PlaybackRequest = { epoch: c.playback.epoch, commandId: crypto.randomUUID(), revision: c.revision, action: event.type === "play" ? "play" : event.type === "pause" ? "pause" : event.type === "seeked" ? "seek" : "rate", position: video.currentTime, rate: event.type === "ratechange" ? video.playbackRate : c.playback.command?.rate ?? video.playbackRate }
+    if (event.type === "seeked") this.pendingSeekId = request.commandId
     if (event.type === "play") { this.expectedPaused = true; video.pause() }
     const dispatch = () => {
       const current = this.context
       // Polling and readiness updates replace the context object, not the user's intent.
       if (current?.roomId === c.roomId && current.revision === c.revision &&
         current.playback.epoch === c.playback.epoch && this.video === video && video.isConnected) {
+        if (request.action === "pause" && (!video.paused || video.seeking || this.userSeeking || this.pendingSeekId || current.playback.preparation)) return
+        console.info("[WTG playback] Запрос", { action: request.action, position: request.position, commandId: request.commandId })
         if (request.action === "seek") console.info("[WTG seek] Передаём запрос в background", { position: request.position, revision: request.revision, commandId: request.commandId })
         this.send(c.roomId, c.revision, { kind: "request", request })
       } else if (request.action === "seek") console.info("[WTG seek] Запрос устарел: контекст просмотра изменился", { position: request.position })
     }
     if (event.type === "seeked") {
+      clearTimeout(this.pauseTimer)
       console.info("[WTG seek] Запрос перемотки поставлен в очередь (150 мс)", { position: request.position, commandId: request.commandId })
       clearTimeout(this.seekTimer); this.seekTimer = setTimeout(dispatch, 150)
     }
-    else dispatch()
+    else if (event.type === "pause") {
+      // Custom players may pause immediately before initiating a seek.
+      clearTimeout(this.pauseTimer)
+      this.pauseTimer = setTimeout(dispatch, 250)
+    } else dispatch()
   }
   private showUnlock() {
     if (this.overlay) return

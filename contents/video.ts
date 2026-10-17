@@ -8,8 +8,9 @@ const ids = new WeakMap<HTMLVideoElement, string>()
 let selected: HTMLVideoElement | undefined
 const playerSync = new PlayerSync(() => selected, (roomId, revision, event) => {
   void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "playback-event", roomId, revision, event }).then(reply => {
+    if (event.kind === "request") console.info("[WTG playback] Ответ background", { action: event.request.action, commandId: event.request.commandId, ok: !!reply?.ok, error: reply?.ok ? undefined : reply?.error })
     if (!reply?.ok) bindingNotice = reply?.error || "Не удалось передать управление"
-  }).catch(() => { bindingNotice = "Потеряна связь с комнатой" })
+  }).catch(() => { bindingNotice = "Потеряна связь с комнатой"; console.warn("[WTG playback] Нет ответа background") })
 })
 let descriptor: VideoDescriptor | undefined
 let bindingNotice: string | undefined
