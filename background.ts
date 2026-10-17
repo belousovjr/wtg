@@ -1,4 +1,44 @@
 import { CHANNEL, isRequest, type Request } from "./lib/messages"
+import { validateVault } from "./lib/persistence"
+import { handleBindingMessage } from "./lib/bindings"
+
+const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
+chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (sender.id !== chrome.runtime.id || message?.channel !== CHANNEL || message.to !== "background") return
+  if (message.type === "vault") {
+    if (sender.tab || sender.url !== chrome.runtime.getURL("tabs/offscreen.html")) return
+    void (async () => {
+      await storageReady
+      if (message.operation === "write") {
+        const value = validateVault(message.value)
+        await chrome.storage.local.set({ vault: value })
+        return value
+      }
+      if (message.operation !== "read") throw new Error("Unknown storage operation")
+      return validateVault((await chrome.storage.local.get("vault")).vault)
+    })().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка хранилища" }))
+    return true
+  }
+  if (message.type === "binding-load" || message.type === "binding-save") {
+    if (sender.tab?.id === undefined || sender.frameId === undefined) return
+    void storageReady.then(() => handleBindingMessage(message, sender)).then(data => respond({ ok: true, data }), () => respond({ ok: false, error: "Не удалось восстановить привязку" }))
+    return true
+  }
+})
+
+async function recoverSession() {
+  await storageReady
+  const saved = (await chrome.storage.local.get("vault")).vault
+  if (saved?.session || saved?.ended?.length) {
+    await ensureOffscreen()
+    await chrome.runtime.sendMessage({ channel: CHANNEL, to: "offscreen", type: "room", command: { kind: "status" } })
+  }
+}
+chrome.runtime.onStartup.addListener(() => { void recoverSession().catch(() => {}) })
+chrome.runtime.onInstalled.addListener(() => { void recoverSession().catch(() => {}) })
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === "wtg-recover") void recoverSession().catch(() => {}) })
+void chrome.alarms.create("wtg-recover", { periodInMinutes: 1 })
+void recoverSession().catch(() => {})
 
 let creating: Promise<void> | undefined
 async function ensureOffscreen() {

@@ -6,6 +6,51 @@ import type { VideoDescriptor, VideoSnapshot } from "../lib/video"
 const ids = new WeakMap<HTMLVideoElement, string>()
 let selected: HTMLVideoElement | undefined
 let descriptor: VideoDescriptor | undefined
+let bindingNotice: string | undefined
+let lastSaved = 0
+let restoring = false
+let restoreTimer: ReturnType<typeof setInterval> | undefined
+
+function persistBinding(force = false) {
+  if (restoring || !selected?.isConnected || !descriptor || (!force && Date.now() - lastSaved < 2000)) return
+  lastSaved = Date.now()
+  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "binding-save", descriptor, position: Number.isFinite(selected.currentTime) ? selected.currentTime : 0, rate: selected.playbackRate }).catch(() => {})
+}
+const playbackEvents = ["timeupdate", "pause", "seeked", "ratechange"]
+function onPlaybackEvent(event: Event) { if (event.target === selected) persistBinding(event.type !== "timeupdate") }
+function setSelected(video?: HTMLVideoElement) {
+  if (selected === video) return
+  for (const name of playbackEvents) selected?.removeEventListener(name, onPlaybackEvent)
+  selected = video
+  for (const name of playbackEvents) selected?.addEventListener(name, onPlaybackEvent)
+}
+void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "binding-load" }).then(reply => {
+  if (!reply?.ok || selected || descriptor) return
+  if (reply.data?.ambiguous) { bindingNotice = "Несколько одинаковых вкладок или фреймов. Выбери видео вручную."; return }
+  const binding = reply.data?.binding
+  if (!binding) return
+  descriptor = binding.descriptor
+  let attempts = 0
+  const restore = () => {
+    if (++attempts > 30) { clearInterval(restoreTimer); bindingNotice = "Не удалось восстановить плеер. Выбери видео заново."; return }
+    const matches = resolve(binding.descriptor)
+    if (matches.length !== 1) return
+    const video = matches[0]
+    restoring = true
+    video.pause()
+    if (video.readyState < 1) { restoring = false; return }
+    try {
+      setSelected(video)
+      video.playbackRate = binding.rate
+      if (Number.isFinite(video.duration)) video.currentTime = Math.min(binding.position, Math.max(0, video.duration - 0.1))
+      bindingNotice = undefined
+      clearInterval(restoreTimer)
+    } catch { bindingNotice = "Позиция недоступна. Выбери видео заново." }
+    finally { restoring = false }
+  }
+  restoreTimer = setInterval(restore, 2000)
+  restore()
+}).catch(() => {})
 let picking = false
 let highlighted: HTMLVideoElement | undefined
 let overlay: HTMLDivElement | undefined
@@ -59,8 +104,11 @@ function onMove(event: PointerEvent) {
   if (video !== highlighted) highlight(video)
 }
 function select(video: HTMLVideoElement) {
+  clearInterval(restoreTimer)
+  bindingNotice = undefined
   descriptor = describe(video)
-  selected = video
+  setSelected(video)
+  persistBinding(true)
   void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "video-selected" }).catch(() => {})
 }
 function onClick(event: MouseEvent) {
@@ -82,10 +130,11 @@ function snapshot(): VideoSnapshot {
   let binding: VideoSnapshot["binding"] = descriptor ? "bound" : "none"
   if (descriptor) {
     const matches = resolve(descriptor)
-    selected = matches.length === 1 ? matches[0] : undefined
+    setSelected(matches.length === 1 ? matches[0] : undefined)
     binding = matches.length > 1 ? "ambiguous" : selected ? "bound" : "missing"
   }
   return {
+    notice: bindingNotice,
     selectedId: selected ? idFor(selected) : null, binding,
     videos: videosIn().map((video, index) => {
       const rect = video.getBoundingClientRect()
@@ -117,7 +166,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         window.addEventListener("keydown", onKey, true)
       }
       if (action.kind === "cancel") stopPicking()
-      if (action.kind === "clear") { stopPicking(); selected = undefined; descriptor = undefined }
+      if (action.kind === "clear") { stopPicking(); clearInterval(restoreTimer); setSelected(); descriptor = undefined }
       if (action.kind === "select" || action.kind === "highlight") {
         const video = videosIn().find(item => idFor(item) === action.id)
         if (action.kind === "select") {

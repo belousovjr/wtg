@@ -56,6 +56,7 @@ export function VideoPicker() {
     <button onClick={() => void refresh()}>Обновить</button>
     <p>Наведи на плеер и нажми. Escape — отмена. После выбора открой расширение снова.</p>
     {data?.frames.map(frame => <div key={frame.frameId}>
+      {frame.snapshot.notice && <p role="status">{frame.snapshot.notice}</p>}
       {frame.snapshot.binding === "missing" || frame.snapshot.binding === "ambiguous" ? <p role="status">Привязка потеряна или неоднозначна. Выбери видео заново.</p> : null}
       {frame.snapshot.videos.map(video => <article key={video.id}
         onMouseEnter={() => void action(frame.frameId, { kind: "highlight", id: video.id })}

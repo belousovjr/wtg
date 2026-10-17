@@ -1,9 +1,10 @@
 import type { VideoDescriptor } from "./video"
 
-export const ROOM_VERSION = 1
-export type Invitation = { version: 1; roomId: string; secret: string; adminId: string }
+export const ROOM_VERSION = 2
+export type Invitation = { version: 2; roomId: string; secret: string; adminKey: string }
 export type SharedState = { url: string | null; video: VideoDescriptor | null; playback: { position: number; paused: boolean; rate: number } }
 export type RoomView = {
+  isAdmin: boolean
   ready: boolean
   status: "idle" | "waiting" | "connected" | "reconnecting" | "error"
   selfId: string
@@ -19,17 +20,18 @@ export type RoomCommand =
   | { kind: "join"; invitation: string }
   | { kind: "leave" }
   | { kind: "retry" }
+  | { kind: "end" }
 
 const token = /^[a-zA-Z0-9_-]{16,128}$/
 export function encodeInvitation(invite: Invitation) {
-  return `wtg1.${btoa(JSON.stringify(invite)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`
+  return `wtg2.${btoa(JSON.stringify(invite)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`
 }
 export function decodeInvitation(text: string): Invitation {
   try {
-    if (!text.startsWith("wtg1.") || text.length > 2048) throw new Error()
+    if (!text.startsWith("wtg2.") || text.length > 2048) throw new Error()
     const raw = text.slice(5).replaceAll("-", "+").replaceAll("_", "/")
     const data = JSON.parse(atob(raw))
-    if (data.version !== ROOM_VERSION || !token.test(data.roomId) || !token.test(data.secret) || !token.test(data.adminId)) throw new Error()
+    if (data.version !== ROOM_VERSION || !token.test(data.roomId) || !token.test(data.secret) || typeof data.adminKey !== "string" || !/^[A-Za-z0-9_-]{87}$/.test(data.adminKey)) throw new Error()
     return data
   } catch { throw new Error("Некорректное приглашение или неподдерживаемая версия") }
 }
@@ -50,7 +52,7 @@ export function validShared(value: unknown): value is SharedState {
 export function validRoomCommand(value: unknown): value is RoomCommand {
   if (!value || typeof value !== "object") return false
   const c = value as RoomCommand
-  if (["status", "leave", "retry"].includes(c.kind)) return true
+  if (["status", "leave", "retry", "end"].includes(c.kind)) return true
   if (c.kind === "join") return typeof c.invitation === "string" && c.invitation.length <= 2048
   return c.kind === "create" && (c.initial === undefined || validShared(c.initial))
 }

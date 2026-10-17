@@ -17,7 +17,7 @@ protocol._compile(compiled, filename)
 const { encodeInvitation, decodeInvitation, validShared, validRoomCommand } = protocol.exports
 
 test("invitation preserves room, secret and pinned administrator", () => {
-  const invite = { version: 1, roomId: "a".repeat(48), secret: "b".repeat(48), adminId: "c".repeat(20) }
+  const invite = { version: 2, roomId: "a".repeat(48), secret: "b".repeat(48), adminKey: "A".repeat(87) }
   assert.deepEqual(decodeInvitation(encodeInvitation(invite)), invite)
 })
 test("reject malformed, oversized and incompatible invitations", () => {

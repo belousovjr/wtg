@@ -57,7 +57,7 @@ export function RoomPanel() {
         <p role="status">{labels[room.status]}</p>}
     {room?.status === "idle" && !busy ? <>
       <button disabled={busy} onClick={create}>Создать комнату</button>
-      <p><label>Приглашение<textarea value={invitation} onChange={e => setInvitation(e.target.value)} placeholder="wtg1.…" style={{ width: "100%", boxSizing: "border-box" }} /></label></p>
+      <p><label>Приглашение<textarea value={invitation} onChange={e => setInvitation(e.target.value)} placeholder="wtg2.…" style={{ width: "100%", boxSizing: "border-box" }} /></label></p>
       <button disabled={busy || !invitation.trim()} onClick={() => void perform({ kind: "join", invitation })}>Присоединиться</button>
     </> : room && room.status !== "idle" && <>
       {room.ready && <>
@@ -67,6 +67,7 @@ export function RoomPanel() {
       <button onClick={copy}>{copied ? "Скопировано" : "Поделиться комнатой"}</button>{" "}
       </>}
       <button disabled={busy} onClick={() => void perform({ kind: "leave" })}>Выйти</button>
+      {room.isAdmin && <button disabled={busy} onClick={() => void perform({ kind: "end" })}>Завершить комнату</button>}
       {(room.status === "error" || room.status === "reconnecting" || room.status === "waiting") && <p><button disabled={busy} onClick={() => void perform({ kind: "retry" })}>Повторить подключение</button></p>}
       {room.ready && room.shared.url && <p>Источник комнаты: {room.shared.url}</p>}
       {room.ready && <small>Сейчас подключаются участники и передаётся начальное состояние. Управление просмотром — следующий этап.</small>}

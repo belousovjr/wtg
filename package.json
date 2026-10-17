@@ -31,7 +31,9 @@
     "permissions": [
       "offscreen",
       "activeTab",
-      "webNavigation"
+      "webNavigation",
+      "storage",
+      "alarms"
     ],
     "host_permissions": [
       "http://*/*",

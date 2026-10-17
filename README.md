@@ -10,9 +10,20 @@ profile or on another device. Each extension profile owns one room connection;
 two tabs in the same profile are not two independent participants.
 
 Keep the whole invitation private: it contains the access secret. The popup may
-be closed without leaving the room. Use Leave to disconnect, or Retry if the
-connection fails. Reloading the extension or restarting Chrome ends the in-memory
-session; creator identity does not persist across restarts yet.
+be closed without leaving the room. Use Leave to disconnect and disable automatic
+rejoin, or Retry if the connection fails. The active session and persistent
+ECDSA identity are stored locally: restarting Chrome or reloading the extension
+rejoins the saved room. The creator remains admin even with a new transport ID.
+
+Invitations now use `wtg2`; old `wtg1` invitations are incompatible. Create a new
+room after upgrading from the previous prototype and share its new invitation.
+Only the creator can End room. Closing Chrome is not an end command. Signed
+termination notices persist and are relayed to returning participants while a
+holder is online; offline delivery cannot be guaranteed without a server.
+
+Refreshing a video page restores its saved binding and position on pause when
+the player is accessible. Identical tabs/ambiguous frames require manual selection.
+Storage schema/key errors stop recovery rather than silently replacing identity.
 
 The room currently shares its initial source/player state and participant list.
 Navigation and playback synchronization are not implemented yet. Public signaling
@@ -35,9 +46,9 @@ and the active tab's top frame. Close and reopen the popup, then check again:
 the context ID and start time should stay the same. Also verify with the service
 worker stopped; dev mode alone is insufficient to verify worker suspension.
 
-The offscreen document is created on demand and will own future room connections.
+The offscreen document owns room connections and is recreated for saved sessions.
 Chrome internal pages and the Web Store do not support content-script diagnostics.
-Reloading/updating the extension or restarting Chrome destroys in-memory state.
+Recovery may take up to a minute after unexpected offscreen termination.
 Video selection and rooms are available; playback synchronization is a later stage.
 
 First, run the development server:

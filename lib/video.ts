@@ -21,6 +21,7 @@ export type VideoInfo = {
   descriptor: VideoDescriptor
 }
 export type VideoSnapshot = {
+  notice?: string
   videos: VideoInfo[]
   selectedId: string | null
   binding: "none" | "bound" | "missing" | "ambiguous"

@@ -1,5 +1,5 @@
 import { isRequest, type Reply, type RuntimeStatus } from "../lib/messages"
-import { roomCommand } from "../lib/room"
+import { initializeRoom, roomCommand } from "../lib/room"
 
 // Trystero and room state live here, independent of popup/worker lifetime.
 const status: RuntimeStatus = {
@@ -7,6 +7,7 @@ const status: RuntimeStatus = {
   startedAt: Date.now(),
   webRtcAvailable: typeof RTCPeerConnection === "function"
 }
+void initializeRoom().catch(() => {})
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || sender.tab || !isRequest(message) || message.to !== "offscreen") return
   if (message.type === "room") {
