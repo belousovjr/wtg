@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { VideoPicker } from "./components/video-picker"
+import { RoomPanel } from "./components/room-panel"
 import { CHANNEL, sendRequest, type RuntimeStatus, type FrameStatus } from "./lib/messages"
 
 function IndexPopup() {
@@ -28,6 +29,7 @@ function IndexPopup() {
         padding: 16, width: 340, fontFamily: "system-ui", overflowWrap: "anywhere"
       }}>
       <h2>Watch Together</h2>
+      <RoomPanel />
       <VideoPicker />
       <button disabled={busy} onClick={check}>{busy ? "Проверяем…" : "Проверить подключение к странице"}</button>
       {status && <div>

@@ -89,7 +89,7 @@ function snapshot(): VideoSnapshot {
     selectedId: selected ? idFor(selected) : null, binding,
     videos: videosIn().map((video, index) => {
       const rect = video.getBoundingClientRect()
-      return { id: idFor(video), label: video.getAttribute("aria-label") || video.title || `Видео ${index + 1}`,
+      return { position: Number.isFinite(video.currentTime) ? video.currentTime : 0, playbackRate: video.playbackRate, id: idFor(video), label: video.getAttribute("aria-label") || video.title || `Видео ${index + 1}`,
         width: Math.round(rect.width), height: Math.round(rect.height),
         duration: Number.isFinite(video.duration) ? video.duration : null,
         readyState: video.readyState, paused: video.paused, poster: video.poster,

@@ -2,7 +2,27 @@ This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with
 
 ## Getting Started
 
-### Stage 1 diagnostics
+### Rooms (prototype)
+
+Rooms use Trystero 0.26.0 with public Nostr signaling. Select a video, create a
+room, copy the invitation and paste it into the extension in another Chrome
+profile or on another device. Each extension profile owns one room connection;
+two tabs in the same profile are not two independent participants.
+
+Keep the whole invitation private: it contains the access secret. The popup may
+be closed without leaving the room. Use Leave to disconnect, or Retry if the
+connection fails. Reloading the extension or restarting Chrome ends the in-memory
+session; creator identity does not persist across restarts yet.
+
+The room currently shares its initial source/player state and participant list.
+Navigation and playback synchronization are not implemented yet. Public signaling
+does not guarantee connectivity: no TURN relay fallback is configured in this
+prototype. Test on different networks before relying on it.
+
+Run `npm test` for protocol/lifecycle checks with a mocked transport. Actual
+cross-device connectivity must be checked in Chrome separately.
+
+### Diagnostics
 
 Requires Chrome 116+. Run `npm run typecheck` and `npm run build` for verification.
 Load `build/chrome-mv3-prod` as an unpacked extension at `chrome://extensions`
@@ -18,7 +38,7 @@ worker stopped; dev mode alone is insufficient to verify worker suspension.
 The offscreen document is created on demand and will own future room connections.
 Chrome internal pages and the Web Store do not support content-script diagnostics.
 Reloading/updating the extension or restarting Chrome destroys in-memory state.
-Rooms, video selection and Trystero are not implemented in this stage.
+Video selection and rooms are available; playback synchronization is a later stage.
 
 First, run the development server:
 

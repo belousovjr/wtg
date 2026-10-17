@@ -8,6 +8,8 @@ export type VideoDescriptor = {
   duration: number | null
 }
 export type VideoInfo = {
+  position: number
+  playbackRate: number
   id: string
   label: string
   width: number

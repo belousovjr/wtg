@@ -21,6 +21,10 @@ async function ensureOffscreen() {
 
 async function handle(message: Request) {
   if (message.to !== "background") throw new Error("Invalid destination")
+  if (message.type === "room") {
+    await ensureOffscreen()
+    return chrome.runtime.sendMessage({ ...message, to: "offscreen" })
+  }
   if (message.type === "video-selected" || message.type === "cancel-picking") throw new Error("Frame sender required")
   if (message.type === "tab-videos") {
     const frames = await chrome.webNavigation.getAllFrames({ tabId: message.tabId }) || []
