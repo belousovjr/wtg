@@ -10,7 +10,7 @@ function load(name, imports = {}) {
   const mod = new Module(filename, module)
   mod.filename = filename
   mod.paths = module.paths
-  mod.require = id => id in imports ? imports[id] : id === "./source" ? load("source") : require(id)
+  mod.require = id => id in imports ? imports[id] : ["./source", "./playback"].includes(id) ? load(id.slice(2)) : require(id)
   mod._compile(ts.transpileModule(readFileSync(filename, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
   }).outputText, filename)
@@ -106,7 +106,7 @@ test("signed end survives offline guest and cannot be forged", async () => {
   await assert.rejects(admin.roomCommand({ kind: "join", invitation: created.invitation }), /завершена/)
   const guest = client("returning-guest", {}, network)
   await guest.roomCommand({ kind: "join", invitation: created.invitation })
-  guest.transports.at(-1).action.onMessage({ version: 4, roomId: protocol.decodeInvitation(created.invitation).roomId,
+  guest.transports.at(-1).action.onMessage({ version: 5, roomId: protocol.decodeInvitation(created.invitation).roomId,
     id: "forged-end", sequence: 1, kind: "ended", certificate: { ...disk.value.ended[0], signature: "forged" } }, { peerId: "attacker" })
   await settle(guest)
   assert.notEqual((await guest.roomCommand({ kind: "status" })).status, "idle")
@@ -146,7 +146,7 @@ test("admin removal, persistent ban, manual approval and readmission across Peer
 
     // A forged policy must not remove an existing member or supersede revision.
     const policy = structuredClone(adminDisk.value.policies[0])
-    guest.transports.at(-1).action.onMessage({ version: 4, roomId: policy.roomId, sequence: 1, id: "fake-policy", kind: "policy",
+    guest.transports.at(-1).action.onMessage({ version: 5, roomId: policy.roomId, sequence: 1, id: "fake-policy", kind: "policy",
       policy: { ...policy, revision: policy.revision + 100, allowed: [policy.adminKey], blocked: [guestDisk.value.identity.publicKey] } }, { peerId: other.id })
     await settle(guest)
     assert.equal((await guest.roomCommand({ kind: "status" })).ready, true)
@@ -230,7 +230,7 @@ test("guest source changes are ordered by coordinator; stale requests, snapshots
     await guest.roomCommand({ kind: "source-ready", readiness: { revision: 0, status: "needs-video" } })
     await settle(admin, guest)
     assert.equal((await admin.roomCommand({ kind: "status" })).sourceReadiness.guest.status, "ready")
-    admin.transports.at(-1).action.onMessage({ version: 4, roomId: protocol.decodeInvitation(created.invitation).roomId, sequence: 1, id: crypto.randomUUID(), kind: "source-request", command: { ...command, expectedRevision: 1, commandId: crypto.randomUUID(), url: "https://attacker.example.com" } }, { peerId: "unadmitted" })
+    admin.transports.at(-1).action.onMessage({ version: 5, roomId: protocol.decodeInvitation(created.invitation).roomId, sequence: 1, id: crypto.randomUUID(), kind: "source-request", command: { ...command, expectedRevision: 1, commandId: crypto.randomUUID(), url: "https://attacker.example.com" } }, { peerId: "unadmitted" })
     await settle(admin)
     assert.equal((await admin.roomCommand({ kind: "status" })).shared.url, command.url)
   } finally { await admin.roomCommand({ kind: "leave" }); await guest.roomCommand({ kind: "leave" }) }

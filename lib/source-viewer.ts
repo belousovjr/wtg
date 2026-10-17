@@ -2,9 +2,10 @@ import { CHANNEL } from "./messages"
 import { sameFrameLocation, sourceRevision, webUrl, type SourceReadiness, type SourceStatus } from "./source"
 import { validShared, type SharedState } from "./room-protocol"
 import type { VideoDescriptor } from "./video"
+import { validPlaybackRequest, validPlayerReport, type PlaybackLocal } from "./playback"
 
-type SourceState = { roomId: string | null; ready: boolean; shared: SharedState }
-type Viewer = { boundByUser: true; roomId: string; revision: number; url: string; tabId: number; closed?: boolean; override?: { descriptor: VideoDescriptor }; status?: SourceStatus }
+type SourceState = { roomId: string | null; ready: boolean; shared: SharedState; playback?: PlaybackLocal }
+type Viewer = { frameId?: number; boundByUser: true; roomId: string; revision: number; url: string; tabId: number; closed?: boolean; override?: { descriptor: VideoDescriptor }; status?: SourceStatus }
 let state: SourceState | undefined
 let viewer: Viewer | undefined
 let loaded = false
@@ -25,6 +26,10 @@ async function load() {
 async function persist() {
   if (viewer) await chrome.storage.session.set({ sourceViewer: viewer })
   else await chrome.storage.session.remove("sourceViewer")
+}
+async function suspendViewer() {
+  if (viewer?.frameId === undefined) return
+  try { await chrome.tabs.sendMessage(viewer.tabId, { channel: CHANNEL, to: "content", type: "playback-state", roomId: viewer.roomId, revision: viewer.revision, playback: null }, { frameId: viewer.frameId }) } catch {}
 }
 async function report(status: SourceStatus) {
   if (!state?.ready || !state.roomId) return
@@ -79,6 +84,8 @@ async function reconcile() {
   try {
     const reply = await chrome.tabs.sendMessage(tab.id!, { channel: CHANNEL, to: "content", type: "source-bind", roomId: state.roomId,
       revision, descriptor, shared: !viewer.override, position: state.shared.playback.position }, { frameId: candidates[0].frameId })
+    viewer.frameId = candidates[0].frameId
+    if (state.playback) await chrome.tabs.sendMessage(tab.id!, { channel: CHANNEL, to: "content", type: "playback-state", roomId: state.roomId, revision, playback: state.playback }, { frameId: viewer.frameId })
     await report(reply?.ok ? reply.data.status : "unavailable")
   } catch { await report("unavailable") }
 }
@@ -88,11 +95,24 @@ export function applySourceState(value: SourceState) {
     if (!validShared(value.shared)) throw new Error("Invalid source state")
     if (state?.roomId === value.roomId && sourceRevision(value.shared) < sourceRevision(state.shared)) return
     const becameReady = !state?.ready && value.ready
+    if (!value.ready || viewer?.roomId !== value.roomId || viewer?.revision !== sourceRevision(value.shared)) await suspendViewer()
     state = value
     if (!value.roomId) { viewer = undefined; lastReport = ""; await persist(); return }
     if (viewer && viewer.roomId !== value.roomId) { viewer = undefined; await persist() }
     if (becameReady) lastReport = ""
     await reconcile()
+  })
+}
+export function forwardPlaybackEvent(sender: chrome.runtime.MessageSender, message: { roomId: string; revision: number; event: { kind: string; request?: unknown; report?: unknown } }) {
+  return serial(async () => {
+    await load()
+    if (!state?.ready || !viewer || sender.tab?.id !== viewer.tabId || sender.frameId !== viewer.frameId || message.roomId !== state.roomId || message.revision !== sourceRevision(state.shared)) throw new Error("Устаревшая привязка плеера")
+    const event = message.event
+    const command = event?.kind === "request" && validPlaybackRequest(event.request) ? { kind: "playback", request: event.request } : event?.kind === "report" && validPlayerReport(event.report) ? { kind: "player-report", report: event.report } : null
+    if (!command) throw new Error("Некорректное событие плеера")
+    const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "offscreen", type: "room", command })
+    if (!reply?.ok) throw new Error(reply?.error || "Не удалось передать управление")
+    return null
   })
 }
 export function refreshSource(tabId: number) {
@@ -102,6 +122,7 @@ export function bindSourceTab(tabId: number, roomId: string) {
   return serial(async () => {
     await load()
     await chrome.tabs.get(tabId)
+    await suspendViewer()
     viewer = { boundByUser: true, roomId, revision: -1, url: "", tabId }
     lastReport = ""
     await persist()
@@ -114,10 +135,10 @@ export function bindSourceTab(tabId: number, roomId: string) {
 export function focusSource() {
   return serial(async () => {
     await load()
-    if (!viewer || viewer.closed) throw new Error("Вкладка просмотра не привязана или закрыта. Нажми «Смотреть в этой вкладке».")
+    if (!viewer || viewer.closed) throw new Error("Вкладка просмотра не привязана или закрыта. Нажми «Назначить эту вкладку для просмотра».")
     let tab: chrome.tabs.Tab
     try { tab = await chrome.tabs.get(viewer.tabId) }
-    catch { viewer.closed = true; await persist(); await report("unavailable"); throw new Error("Вкладка просмотра закрыта. Нажми «Смотреть в этой вкладке».") }
+    catch { viewer.closed = true; await persist(); await report("unavailable"); throw new Error("Вкладка просмотра закрыта. Нажми «Назначить эту вкладку для просмотра».") }
     await chrome.tabs.update(viewer.tabId, { active: true })
     if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true })
     return viewer

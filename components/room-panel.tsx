@@ -4,6 +4,7 @@ import type { RoomCommand, RoomView, SharedState } from "../lib/room-protocol"
 import type { TabVideos } from "../lib/video"
 import { LoadingStatus } from "./loading-status"
 import { SourceControls } from "./source-controls"
+import { PlaybackControls } from "./playback-controls"
 
 const labels: Record<RoomView["status"], string> = {
   idle: "Не в комнате", waiting: "Ожидание участников", connected: "Подключено",
@@ -87,7 +88,7 @@ export function RoomPanel() {
       {room.isAdmin && <button disabled={busy} onClick={() => void perform({ kind: "end" })}>Завершить комнату</button>}
       {(room.status === "error" || room.status === "reconnecting" || room.status === "waiting") && <p><button disabled={busy} onClick={() => void perform({ kind: "retry" })}>Повторить подключение</button></p>}
       {room.ready && <SourceControls room={room} perform={perform} busy={busy} />}
-      {room.ready && <small>Общий источник подключён. Синхронизация воспроизведения — следующий этап.</small>}
+      {room.ready && <PlaybackControls room={room} perform={perform} busy={busy} />}
     </>}
     {(error || room?.error) && <p role="alert">{error || room?.error}</p>}
   </section>

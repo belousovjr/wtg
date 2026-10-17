@@ -7,7 +7,7 @@ const path = require("node:path")
 function load(name, imports = {}) {
   const filename = path.resolve(__dirname, `../lib/${name}.ts`)
   const mod = new Module(filename, module)
-  mod.require = id => id in imports ? imports[id] : id === "./source" ? load("source") : require(id)
+  mod.require = id => id in imports ? imports[id] : ["./source", "./playback"].includes(id) ? load(id.slice(2)) : require(id)
   mod._compile(ts.transpileModule(readFileSync(filename, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
   }).outputText, filename)
@@ -16,6 +16,32 @@ function load(name, imports = {}) {
 const source = load("source"), protocol = load("room-protocol")
 const descriptor = { pageUrl: "https://example.com/watch", frameUrl: "https://example.com/watch", framePath: [], shadowPath: [], selector: "#video", source: "https://media.example.com/1.mp4", duration: 100 }
 const shared = { url: descriptor.pageUrl, video: descriptor, sourceRevision: 1, playback: { position: 0, paused: true, rate: 1 } }
+test("group status distinguishes shared choice from confirmed bindings, stale revisions and autoplay blocks", () => {
+  const { groupPlayerStatus } = load("group-status")
+  const room = { ready: true, shared, participants: ["self", "guest"], sourceReadiness: {}, sync: { epoch: "epoch", command: { sequence: 1 }, preparation: null, players: {} } }
+  assert.equal(groupPlayerStatus(room).bound, 0)
+  assert.equal(groupPlayerStatus(room).allReady, false) // A shared selector is not a binding acknowledgement.
+  room.sourceReadiness.self = { revision: 1, status: "ready" }
+  room.sourceReadiness.guest = { revision: 0, status: "ready" }
+  assert.equal(groupPlayerStatus(room).bound, 1) // Old video readiness is not counted.
+  room.sourceReadiness.guest = { revision: 1, status: "loading-video" }
+  assert.equal(groupPlayerStatus(room).bound, 2)
+  assert.equal(groupPlayerStatus(room).allReady, false)
+  room.sourceReadiness.guest.status = "ready"
+  assert.equal(groupPlayerStatus(room).allReady, true)
+  room.sync.preparation = { id: "preparing" }
+  assert.equal(groupPlayerStatus(room).allReady, false)
+  room.sync.preparation = null
+  room.sync.players.guest = { epoch: "epoch", sequence: 1, revision: 1, status: "blocked" }
+  assert.equal(groupPlayerStatus(room).bound, 2)
+  assert.equal(groupPlayerStatus(room).allReady, false)
+  assert.match(groupPlayerStatus(room).members[1].text, /разреши запуск/)
+  room.sync.players.guest.status = "missing"
+  assert.equal(groupPlayerStatus(room).bound, 1)
+  room.ready = false
+  assert.equal(groupPlayerStatus(room).bound, 0)
+  assert.equal(groupPlayerStatus(room).allReady, false)
+})
 test("URL and descriptor validation rejects unsafe URLs and mismatched pages", () => {
   for (const url of ["javascript:alert(1)", "chrome://settings", "https://user:password@example.com", "file:///test"]) assert.equal(source.webUrl(url), null)
   assert.equal(protocol.validRoomCommand({ kind: "source", url: "https://other.example.com", video: descriptor, expectedRevision: 0, commandId: crypto.randomUUID() }), false)

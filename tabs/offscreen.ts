@@ -9,7 +9,7 @@ const status: RuntimeStatus = {
   webRtcAvailable: typeof RTCPeerConnection === "function"
 }
 observeSource((view, roomId) => {
-  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "source-state", value: { roomId, ready: view.ready, shared: view.shared } }).catch(() => {})
+  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "source-state", value: { roomId, ready: view.ready, shared: view.shared, playback: view.sync } }).catch(() => {})
 })
 void initializeRoom().catch(() => {})
 chrome.runtime.onMessage.addListener((message, sender, respond) => {

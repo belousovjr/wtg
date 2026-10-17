@@ -1,0 +1,216 @@
+const assert = require("node:assert/strict")
+const { test } = require("node:test")
+const { readFileSync } = require("node:fs")
+const path = require("node:path")
+const vm = require("node:vm")
+const ts = require("typescript")
+
+function load(name, clock, imports = {}, extra = {}) {
+  const code = ts.transpileModule(readFileSync(path.resolve(__dirname, `../lib/${name}.ts`), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
+  }).outputText
+  const exports = {}
+  vm.runInNewContext(code, { exports, require: id => imports[id], performance: { timeOrigin: clock.origin || 0, now: () => clock.time },
+    crypto, structuredClone, setInterval: () => 1, clearInterval: () => {}, setTimeout, clearTimeout, ...extra })
+  return exports
+}
+test("clock estimator accounts for clock offset and remote processing; timelines compensate late execution", () => {
+  const pb = load("playback", { time: 0 })
+  const estimate = pb.clockSample(1000, 1520, 1530, 1050)
+  assert.equal(estimate.offset, 500)
+  assert.equal(estimate.rtt, 40)
+  assert.equal(estimate.uncertainty, 20)
+  assert.equal(pb.clockSample(100, 20, 10, 90), null)
+  const c = { position: 10, executeAt: 1000, paused: false, rate: 2 }
+  assert.equal(pb.positionAt(c, 900), 10)
+  assert.equal(pb.positionAt(c, 1250), 10.5)
+  assert.equal(pb.positionAt({ ...c, paused: true }, 5000), 10)
+  assert.equal(pb.startLead([]), 400)
+  assert.equal(pb.startLead([{ rtt: 10000, uncertainty: 5000 }]), 3000)
+})
+
+test("coordinator prepares, waits for three clock samples, schedules future start and allows immediate pause", async () => {
+  const hostClock = { time: 100000 }, guestClock = { time: 100000, origin: 500 }
+  const hostPb = load("playback", hostClock), guestPb = load("playback", guestClock)
+  let rev = 0
+  const commits = [], sent = []
+  let host, guest
+  const move = ms => { hostClock.time += ms; guestClock.time += ms }
+  const makeOptions = (id, isAdmin) => ({
+    selfId: id, isAdmin, adminId: () => "host", participants: () => ["host", "guest"], ready: () => true, revision: () => rev,
+    serialize: fn => fn(), changed: () => {}, error: message => { throw Error(message) }, committed: async c => { commits.push({ id, command: c }) },
+    send: async (kind, data) => {
+      sent.push(kind); move(20)
+      await (isAdmin ? guest : host).receive(kind, data || {}, id, isAdmin)
+    }
+  })
+  host = new hostPb.PlaybackSession(makeOptions("host", true))
+  guest = new guestPb.PlaybackSession(makeOptions("guest", false))
+  try {
+    await guest.acceptSnapshot(host.wire())
+    for (let i = 0; i < 3; i++) { move(220); await guest.tick() }
+    assert.equal(guest.local().clock.offset, -500)
+    const request = { epoch: host.wire().epoch, commandId: crypto.randomUUID(), revision: 0, action: "play", position: 12, rate: 1 }
+    await guest.request(request)
+    assert.equal(host.wire().command, null)
+    const prep = host.wire().preparation
+    assert.ok(prep)
+    await host.player({ epoch: prep.epoch, revision: 0, preparationId: prep.id, status: "ready" })
+    await guest.player({ epoch: prep.epoch, revision: 0, preparationId: prep.id, status: "ready" })
+    await host.tick()
+    assert.equal(host.wire().command.sequence, 1)
+    assert.equal(guest.wire().command.sequence, 1)
+    assert.ok(host.wire().command.executeAt > hostClock.time)
+    await guest.request(request)
+    assert.equal(host.wire().command.sequence, 1)
+    await guest.request({ ...request, commandId: crypto.randomUUID(), action: "play" })
+    assert.ok(host.wire().preparation)
+    await guest.request({ ...request, commandId: crypto.randomUUID(), action: "pause" })
+    assert.equal(host.wire().preparation, null)
+    assert.equal(host.wire().command.paused, true)
+    assert.equal(host.wire().command.sequence, 2)
+    assert.ok(host.wire().command.executeAt - hostClock.time <= 250)
+    await guest.receive("pb-commit", { command: { ...host.wire().command, sequence: 4 } }, "host", true)
+    assert.ok(sent.includes("pb-resync"))
+    assert.equal(guest.wire().command.sequence, 2)
+    rev = 1
+    await host.tick(); await guest.tick()
+    assert.equal(host.wire().command, null)
+    await assert.rejects(host.request(request), /другому видео/)
+  } finally { host.dispose(); guest.dispose() }
+})
+
+test("preparation deadline starts without waiting forever for a missing participant", async () => {
+  const clock = { time: 100000 }, pb = load("playback", clock)
+  const actor = new pb.PlaybackSession({ selfId: "host", isAdmin: true, adminId: () => "host", participants: () => ["host", "offline"], ready: () => true, revision: () => 0,
+    serialize: fn => fn(), changed: () => {}, committed: async () => {}, send: async () => {}, error: () => {} })
+  try {
+    await actor.request({ epoch: actor.wire().epoch, commandId: crypto.randomUUID(), revision: 0, action: "play", position: 0, rate: 1 })
+    clock.time += 4999
+    await actor.tick()
+    assert.equal(actor.wire().command, null)
+    clock.time += 2
+    await actor.tick()
+    assert.equal(actor.wire().command.sequence, 1)
+    assert.equal(actor.wire().command.paused, false)
+  } finally { actor.dispose() }
+})
+
+test("player waits for executeAt, applies late timeline, suppresses command echoes and cancels on detach", async () => {
+  const clock = { time: 1000 }, tasks = new Map()
+  let id = 0
+  const timers = { setTimeout: (fn, delay) => { tasks.set(++id, { fn, at: clock.time + delay }); return id }, clearTimeout: key => tasks.delete(key) }
+  const run = () => { for (const [key, task] of [...tasks]) if (task.at <= clock.time) { tasks.delete(key); task.fn() } }
+  class Video extends EventTarget {
+    isConnected = true; readyState = 4; duration = 100; seeking = false; paused = true; position = 0; rate = 1; plays = 0
+    seekable = { length: 1, start: () => 0, end: () => 100 }
+    get currentTime() { return this.position }
+    set currentTime(value) { this.position = value; this.dispatchEvent(new Event("seeked")) }
+    get playbackRate() { return this.rate }
+    set playbackRate(value) { this.rate = value; this.dispatchEvent(new Event("ratechange")) }
+    pause() { if (!this.paused) { this.paused = true; this.dispatchEvent(new Event("pause")) } }
+    play() { this.plays++; this.paused = false; this.dispatchEvent(new Event("play")); return Promise.resolve() }
+  }
+  const pb = load("playback", clock), player = load("player-sync", clock, { "./playback": pb }, timers)
+  const video = new Video(), events = []
+  const sync = new player.PlayerSync(() => video, (_room, _rev, message) => events.push(message))
+  const command = { epoch: "epoch", revision: 0, sequence: 1, commandId: crypto.randomUUID(), executeAt: 1200, position: 10, paused: false, rate: 1 }
+  const local = { epoch: "epoch", command, preparation: null, players: {}, clock: { offset: 0, rtt: 0, uncertainty: 0 } }
+  sync.update("room", 0, local)
+  clock.time = 1199; run(); assert.equal(video.plays, 0)
+  clock.time = 1400; run(); await Promise.resolve()
+  assert.equal(video.plays, 1)
+  assert.equal(video.currentTime, 10.2)
+  assert.equal(events.filter(e => e.kind === "request").length, 0)
+  video.pause()
+  assert.equal(events.filter(e => e.kind === "request").at(-1).request.action, "pause")
+  sync.update("room", 0, { ...local, command: { ...command, sequence: 2, executeAt: 2000 } })
+  sync.update("room", 0, null)
+  clock.time = 3000; run()
+  assert.equal(video.plays, 1)
+})
+
+test("manual seek survives state refreshes but not source, epoch, room or player replacement", () => {
+  const clock = { time: 1000 }, tasks = new Map(), events = []
+  let id = 0
+  const timers = { setTimeout: fn => { tasks.set(++id, fn); return id }, clearTimeout: key => tasks.delete(key) }
+  const flush = () => { for (const [key, fn] of [...tasks]) { tasks.delete(key); fn() } }
+  class Video extends EventTarget {
+    isConnected = true; currentTime = 25; playbackRate = 1; paused = true
+    pause() {}
+  }
+  const pb = load("playback", clock), player = load("player-sync", clock, { "./playback": pb }, timers)
+  let video = new Video()
+  const sync = new player.PlayerSync(() => video, (_room, _rev, message) => events.push(message))
+  const state = { epoch: "epoch", command: null, preparation: null, players: {}, clock: null }
+  sync.update("room", 0, state)
+  video.dispatchEvent(new Event("seeking"))
+  flush()
+  assert.equal(events.length, 0) // Start is diagnostic, not a rate/seek command.
+  video.dispatchEvent(new Event("seeked"))
+  sync.update("room", 0, { ...state })
+  flush()
+  assert.equal(events.length, 1)
+  assert.equal(events[0].request.action, "seek")
+  assert.equal(events[0].request.position, 25)
+  // Repeated user seeks coalesce to the latest explicit position.
+  video.currentTime = 35; video.dispatchEvent(new Event("seeked"))
+  video.currentTime = 45; video.dispatchEvent(new Event("seeked"))
+  sync.update("room", 0, { ...state })
+  flush()
+  assert.equal(events.length, 2)
+  assert.equal(events[1].request.position, 45)
+  for (const change of [
+    () => sync.update("room", 1, state),
+    () => sync.update("room", 0, { ...state, epoch: "new" }),
+    () => sync.update("other", 0, state),
+    () => {
+      const old = video
+      video = new Video(); sync.bind()
+      old.dispatchEvent(new Event("seeked")) // Detached listener must not dispatch.
+    },
+    () => sync.update("room", 0, null)
+  ]) {
+    sync.update("room", 0, state)
+    video.dispatchEvent(new Event("seeked"))
+    change(); flush()
+    assert.equal(events.length, 2)
+  }
+})
+
+test("autoplay denial reports blocked and unlock calls play directly without broadcasting a new user command", async () => {
+  const clock = { time: 1000 }, tasks = [], panels = [], events = []
+  class Video extends EventTarget {
+    isConnected = true; readyState = 4; duration = 100; seeking = false; paused = true; currentTime = 0; playbackRate = 1; blocked = true
+    seekable = { length: 1, start: () => 0, end: () => 100 }
+    pause() { if (!this.paused) { this.paused = true; this.dispatchEvent(new Event("pause")) } }
+    play() {
+      if (this.blocked) return Promise.reject(Object.assign(new Error("Blocked"), { name: "NotAllowedError" }))
+      this.paused = false; this.dispatchEvent(new Event("play")); return Promise.resolve()
+    }
+  }
+  const document = {
+    createElement: () => ({ style: {}, children: [], append(child) { this.children.push(child) }, remove() { this.removed = true } }),
+    documentElement: { append(panel) { panels.push(panel) } }
+  }
+  const pb = load("playback", clock), player = load("player-sync", clock, { "./playback": pb }, {
+    document, setTimeout: fn => { tasks.push(fn); return tasks.length }, clearTimeout: () => {}
+  })
+  const video = new Video(), sync = new player.PlayerSync(() => video, (_room, _rev, message) => events.push(message))
+  const command = { epoch: "epoch", revision: 0, sequence: 1, commandId: crypto.randomUUID(), executeAt: 1000, position: 0, paused: false, rate: 1 }
+  const state = { epoch: "epoch", sequence: 1, command, preparation: null, players: {}, clock: null }
+  sync.update("room", 0, state)
+  assert.equal(tasks.length, 0) // Do not guess executeAt while clock is unknown.
+  sync.update("room", 0, { ...state, clock: { offset: 0, rtt: 0, uncertainty: 0 } })
+  tasks.pop()()
+  await Promise.resolve(); await Promise.resolve()
+  assert.equal(events.at(-1).report.status, "blocked")
+  assert.equal(panels.length, 1)
+  video.blocked = false
+  panels[0].children[0].onclick()
+  await Promise.resolve(); await Promise.resolve()
+  assert.equal(video.paused, false)
+  assert.equal(events.at(-1).report.status, "ready")
+  assert.equal(events.filter(e => e.kind === "request").length, 0)
+  sync.update("room", 0, null)
+})

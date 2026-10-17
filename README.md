@@ -28,7 +28,7 @@ requests and can allow them. The Removed participants section allows readmission
 the user then manually joins again with the same invitation. Admission policies
 survive restart and leaving/rejoining the room.
 
-All participants must update to the source-aware wire protocol (v4).
+All participants must update to the playback-aware wire protocol (v5).
 Existing wtg2 invitations remain valid. Without accounts a user can create new
 keys, so the admin must recognize whom they approve. Removal controls application
 membership; it cannot erase invitation secrets already held by a custom client.
@@ -37,26 +37,46 @@ Refreshing a video page restores its saved binding and position on pause when
 the player is accessible. Identical tabs/ambiguous frames require manual selection.
 Storage schema/key errors stop recovery rather than silently replacing identity.
 
-Any admitted participant can change the shared URL or use “Смотреть это вместе” on a
+Any admitted participant can change the shared URL or use “Выбрать для группы” on a
 video card. The coordinator orders changes with source revisions. Creating or
 joining a room binds the tab active at that action as your viewing tab. Shared
 URLs navigate only that tab; matching URLs do not reload. Switching to another
 tab does not move the binding. No new tabs are created automatically.
-“Выбрать плеер у меня” and
+“Привязать у меня” and
 on-page selection only map a local player, useful when the shared selector does
 not match a personalized page. Local mappings reset when the shared source changes.
 
-“Перейти к просмотру” activates the bound tab; “Смотреть в этой вкладке” explicitly
+“Открыть мою вкладку просмотра” activates the bound tab; “Назначить эту вкладку для просмотра” explicitly
 transfers viewing to your current tab. After closing the viewing tab, bind another
 one explicitly: even a new shared source does not pick an unrelated tab. Worker
 restart retains the binding; after a full Chrome restart bind a tab again. Legacy
 auto-created tabs remain open but are no longer treated as user-approved bindings.
 Leaving detaches the tab without closing it.
+
+The group summary shows X of N confirmed player bindings and a reason for each
+participant still waiting. It turns green only when all current members are bound
+and ready. Cards use separate labels: “Выбор группы” is the shared target;
+“Привязан у тебя” is an actual local room-binding acknowledgement. A chosen shared
+selector alone never produces a green group status.
 Readiness indicates loading, missing video, available metadata/data/seek position,
 or an unavailable/different page. Browser autoplay permission is not tested until
-an actual playback attempt. Playback synchronization is not implemented yet. Public signaling
+an actual playback attempt. Public signaling
 does not guarantee connectivity: no TURN relay fallback is configured in this
 prototype. Test on different networks before relying on it.
+
+### Shared playback (prototype)
+
+After selecting a room video, use common play/pause/seek/speed controls in the
+popup or the native player controls. Volume and mute remain local. Play prepares
+the player positions and waits up to five seconds before scheduling a common
+future start; pause cancels preparation immediately. Clock offset/RTT estimates
+and per-player preparation/errors are shown in the popup.
+
+If Chrome blocks autoplay, click “Разрешить воспроизведение” on the video page.
+This unlocks only the local player and catches it up with the shared timeline.
+Finite-duration HTML video and 0.25–4x speed are supported in this stage. Live
+streams and ongoing drift correction are not implemented yet. No rendered-frame
+accuracy guarantee is claimed; actual cross-device playback still needs testing.
 
 Run `npm test` for protocol/lifecycle checks with a mocked transport. Actual
 cross-device connectivity must be checked in Chrome separately.
@@ -77,7 +97,8 @@ worker stopped; dev mode alone is insufficient to verify worker suspension.
 The offscreen document owns room connections and is recreated for saved sessions.
 Chrome internal pages and the Web Store do not support content-script diagnostics.
 Recovery may take up to a minute after unexpected offscreen termination.
-Video selection and rooms are available; playback synchronization is a later stage.
+Video selection, rooms and scheduled playback are available; ongoing drift
+correction is the next stage.
 
 First, run the development server:
 

@@ -2,11 +2,15 @@ import { CHANNEL, isRequest, type Request } from "./lib/messages"
 import { validateVault } from "./lib/persistence"
 import { decodeInvitation } from "./lib/room-protocol"
 import { handleBindingMessage } from "./lib/bindings"
-import { applySourceState, bindSourceTab, closeSource, focusSource, refreshSource, selectLocalSource } from "./lib/source-viewer"
+import { applySourceState, bindSourceTab, closeSource, focusSource, forwardPlaybackEvent, refreshSource, selectLocalSource } from "./lib/source-viewer"
 
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || message?.channel !== CHANNEL || message.to !== "background") return
+  if (message.type === "playback-event" && sender.tab) {
+    void forwardPlaybackEvent(sender, message).then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка управления" }))
+    return true
+  }
   if (message.type === "source-state") {
     if (sender.tab || sender.url !== chrome.runtime.getURL("tabs/offscreen.html")) return
     void applySourceState(message.value).then(() => respond({ ok: true }), () => respond({ ok: false }))

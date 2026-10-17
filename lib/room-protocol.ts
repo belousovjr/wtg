@@ -1,11 +1,13 @@
 import type { VideoDescriptor } from "./video"
 import type { MemberCommand } from "./membership"
+import { validCommit, validPlaybackRequest, validPlayerReport, type Commit, type PlaybackLocal, type PlaybackRequest, type PlayerReport } from "./playback"
 import { validReadiness, webUrl, type SourceCommand, type SourceReadiness } from "./source"
 
 export const ROOM_VERSION = 2
 export type Invitation = { version: 2; roomId: string; secret: string; adminKey: string }
-export type SharedState = { sourceRevision?: number; url: string | null; video: VideoDescriptor | null; playback: { position: number; paused: boolean; rate: number } }
+export type SharedState = { control?: Commit; sourceRevision?: number; url: string | null; video: VideoDescriptor | null; playback: { position: number; paused: boolean; rate: number } }
 export type RoomView = {
+  sync?: PlaybackLocal
   sourceReadiness: Record<string, SourceReadiness>
   pendingParticipants: { peerId: string; publicKey: string }[]
   blockedKeys: string[]
@@ -21,6 +23,8 @@ export type RoomView = {
   error: string | null
 }
 export type RoomCommand =
+  | { kind: "playback"; request: PlaybackRequest }
+  | { kind: "player-report"; report: PlayerReport }
   | SourceCommand
   | { kind: "source-ready"; readiness: SourceReadiness }
   | MemberCommand
@@ -48,6 +52,7 @@ export function validShared(value: unknown): value is SharedState {
   if (!value || typeof value !== "object") return false
   try { if (JSON.stringify(value).length > 24000) return false } catch { return false }
   const s = value as SharedState
+  if (s.control !== undefined && !validCommit(s.control)) return false
   if (s.sourceRevision !== undefined && (!Number.isSafeInteger(s.sourceRevision) || s.sourceRevision < 0)) return false
   if (s.url !== null && (typeof s.url !== "string" || s.url.length > 8192 || !/^https?:\/\//.test(s.url))) return false
   if (!s.playback || !Number.isFinite(s.playback.position) || s.playback.position < 0 || typeof s.playback.paused !== "boolean" || !Number.isFinite(s.playback.rate) || s.playback.rate <= 0 || s.playback.rate > 16) return false
@@ -62,6 +67,8 @@ export function validShared(value: unknown): value is SharedState {
 export function validRoomCommand(value: unknown): value is RoomCommand {
   if (!value || typeof value !== "object") return false
   const c = value as RoomCommand
+  if (c.kind === "playback") return validPlaybackRequest(c.request)
+  if (c.kind === "player-report") return validPlayerReport(c.report)
   if (c.kind === "source-ready") return validReadiness(c.readiness)
   if (c.kind === "source") return typeof c.url === "string" && !!webUrl(c.url) && typeof c.commandId === "string" && /^[a-zA-Z0-9-]{16,64}$/.test(c.commandId) && Number.isSafeInteger(c.expectedRevision) && c.expectedRevision >= 0 && validShared({ url: c.url, video: c.video, playback: { position: 0, paused: true, rate: 1 } }) && (c.video === null || webUrl(c.video.pageUrl) === webUrl(c.url))
   if (c.kind === "remove" || c.kind === "approve") return typeof c.peerId === "string" && c.peerId.length > 0 && c.peerId.length <= 128

@@ -2,27 +2,35 @@ import type { PlasmoCSConfig } from "plasmo"
 import { CHANNEL, isRequest, type FrameStatus, type Reply } from "../lib/messages"
 import { describe, resolve, videosIn } from "../lib/video-dom"
 import type { VideoDescriptor, VideoSnapshot } from "../lib/video"
+import { PlayerSync } from "../lib/player-sync"
 
 const ids = new WeakMap<HTMLVideoElement, string>()
 let selected: HTMLVideoElement | undefined
+const playerSync = new PlayerSync(() => selected, (roomId, revision, event) => {
+  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "playback-event", roomId, revision, event }).then(reply => {
+    if (!reply?.ok) bindingNotice = reply?.error || "Не удалось передать управление"
+  }).catch(() => { bindingNotice = "Потеряна связь с комнатой" })
+})
 let descriptor: VideoDescriptor | undefined
 let bindingNotice: string | undefined
 let lastSaved = 0
 let restoring = false
 let restoreTimer: ReturnType<typeof setInterval> | undefined
 let roomSource: { roomId: string; revision: number; descriptor: VideoDescriptor } | undefined
+let roomBoundVideo: HTMLVideoElement | undefined
 function bindRoomSource(message: { roomId: string; revision: number; descriptor: VideoDescriptor; position: number; shared?: boolean }) {
   if (roomSource?.roomId === message.roomId && message.revision < roomSource.revision) return "unavailable"
   const changed = roomSource?.roomId !== message.roomId || roomSource?.revision !== message.revision || JSON.stringify(roomSource.descriptor) !== JSON.stringify(message.descriptor)
   roomSource = { roomId: message.roomId, revision: message.revision, descriptor: message.descriptor }
   const matches = resolve(message.descriptor, { shared: message.shared })
-  if (matches.length !== 1) { setSelected(); descriptor = undefined; bindingNotice = "Плеер комнаты не найден. Выбери соответствующее видео у себя."; return "needs-video" }
+  if (matches.length !== 1) { roomBoundVideo = undefined; setSelected(); descriptor = undefined; bindingNotice = "Плеер комнаты не найден. Выбери соответствующее видео у себя."; return "needs-video" }
   const video = matches[0]
   const newlyBound = selected !== video
   clearInterval(restoreTimer)
   // Subsequent local snapshots must check the local source, not the remote blob URL.
   descriptor = describe(video)
   setSelected(video)
+  roomBoundVideo = video
   roomSource = { roomId: message.roomId, revision: message.revision, descriptor: message.descriptor }
   if (changed || newlyBound) { restoring = true; video.pause(); restoring = false }
   if (video.readyState < 1) return "loading-video"
@@ -44,6 +52,7 @@ function setSelected(video?: HTMLVideoElement) {
   if (selected === video) return
   for (const name of playbackEvents) selected?.removeEventListener(name, onPlaybackEvent)
   selected = video
+  playerSync.bind()
   for (const name of playbackEvents) selected?.addEventListener(name, onPlaybackEvent)
 }
 void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "binding-load" }).then(reply => {
@@ -156,6 +165,7 @@ function snapshot(): VideoSnapshot {
     binding = matches.length > 1 ? "ambiguous" : selected ? "bound" : "missing"
   }
   return {
+    roomBinding: roomSource && selected && selected === roomBoundVideo ? { roomId: roomSource.roomId, revision: roomSource.revision, videoId: idFor(selected) } : undefined,
     notice: bindingNotice,
     selectedId: selected ? idFor(selected) : null, binding,
     videos: videosIn().map((video, index) => {
@@ -169,7 +179,27 @@ function snapshot(): VideoSnapshot {
   }
 }
 
-// Resolve lazily on every snapshot: observes replacement without a costly whole-DOM observer.
+// Check only detached selections; no repeated whole-DOM scan during normal playback.
+// A timer also covers replacements inside open shadow roots while the popup is closed.
+setInterval(() => {
+  if (!descriptor || selected?.isConnected) return
+  const wasRoomBound = !!roomSource && !!roomBoundVideo
+  const matches = resolve(wasRoomBound ? roomSource!.descriptor : descriptor, { shared: wasRoomBound })
+  const replacement = matches.length === 1 ? matches[0] : undefined
+  if (selected !== replacement) {
+    console.info("[WTG seek] Проверка замены плеера", { matches: matches.length, rebound: !!replacement })
+    setSelected(replacement)
+  }
+  if (!replacement) {
+    bindingNotice = matches.length > 1 ? "Замена плеера неоднозначна. Выбери видео у себя." : "Ждём восстановления плеера."
+    return
+  }
+  descriptor = describe(replacement)
+  if (wasRoomBound) roomBoundVideo = replacement
+  bindingNotice = undefined
+  // Reapply the current room timeline through the normal background routing.
+  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "source-refresh" }).catch(() => {})
+}, 500)
 
 export const config: PlasmoCSConfig = {
   matches: ["http://*/*", "https://*/*"],
@@ -177,6 +207,11 @@ export const config: PlasmoCSConfig = {
   run_at: "document_idle"
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (sender.id === chrome.runtime.id && !sender.tab && message?.channel === CHANNEL && message.to === "content" && message.type === "playback-state") {
+    try { playerSync.update(message.roomId, message.revision, message.playback); respond({ ok: true }) }
+    catch { respond({ ok: false }) }
+    return
+  }
   if (sender.id === chrome.runtime.id && !sender.tab && message?.channel === CHANNEL && message.to === "content" && message.type === "source-watch") {
     refreshRoomSource()
     respond({ ok: true })

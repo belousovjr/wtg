@@ -21,6 +21,7 @@ export type VideoInfo = {
   descriptor: VideoDescriptor
 }
 export type VideoSnapshot = {
+  roomBinding?: { roomId: string; revision: number; videoId: string }
   notice?: string
   videos: VideoInfo[]
   selectedId: string | null

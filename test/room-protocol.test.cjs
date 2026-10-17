@@ -14,9 +14,9 @@ const protocol = new Module(filename, module)
 protocol.filename = filename
 protocol.paths = module.paths
 protocol.require = id => {
-  if (id !== "./source") return require(id)
+  if (!["./source", "./playback"].includes(id)) return require(id)
   const source = new Module(filename, module)
-  source._compile(ts.transpileModule(readFileSync(path.resolve(__dirname, "../lib/source.ts"), "utf8"), {
+  source._compile(ts.transpileModule(readFileSync(path.resolve(__dirname, `../lib/${id.slice(2)}.ts`), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
   }).outputText, filename)
   return source.exports
