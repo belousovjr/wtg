@@ -2,6 +2,24 @@ This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with
 
 ## Getting Started
 
+### Stage 1 diagnostics
+
+Requires Chrome 116+. Run `npm run typecheck` and `npm run build` for verification.
+Load `build/chrome-mv3-prod` as an unpacked extension at `chrome://extensions`
+(Developer mode). For automatic rebuilding use `npm run dev` and load
+`build/chrome-mv3-dev` instead.
+
+Refresh an ordinary HTTP(S) tab after loading/reloading the extension. Open the
+popup and click the diagnostics button. It checks the offscreen WebRTC context
+and the active tab's top frame. Close and reopen the popup, then check again:
+the context ID and start time should stay the same. Also verify with the service
+worker stopped; dev mode alone is insufficient to verify worker suspension.
+
+The offscreen document is created on demand and will own future room connections.
+Chrome internal pages and the Web Store do not support content-script diagnostics.
+Reloading/updating the extension or restarting Chrome destroys in-memory state.
+Rooms, video selection and Trystero are not implemented in this stage.
+
 First, run the development server:
 
 ```bash

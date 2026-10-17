@@ -5,6 +5,7 @@
   "description": "A basic Plasmo extension.",
   "author": "Plasmo Corp. <foss@plasmo.com>",
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "dev": "plasmo dev",
     "build": "plasmo build",
     "package": "plasmo package"
@@ -24,7 +25,10 @@
     "typescript": "5.3.3"
   },
   "manifest": {
+    "minimum_chrome_version": "116",
+    "permissions": ["offscreen", "activeTab"],
     "host_permissions": [
+      "http://*/*",
       "https://*/*"
     ]
   }
