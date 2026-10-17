@@ -26,7 +26,7 @@
   },
   "manifest": {
     "minimum_chrome_version": "116",
-    "permissions": ["offscreen", "activeTab"],
+    "permissions": ["offscreen", "activeTab", "webNavigation"],
     "host_permissions": [
       "http://*/*",
       "https://*/*"

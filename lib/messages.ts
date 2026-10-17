@@ -1,8 +1,14 @@
+import type { VideoAction } from "./video"
 export const CHANNEL = "wtg:local:v1"
 export type FrameTarget = { tabId: number; frameId: number }
 export type RuntimeStatus = { instanceId: string; startedAt: number; webRtcAvailable: boolean }
 export type FrameStatus = { url: string; title: string }
 export type Request =
+  | { channel: typeof CHANNEL; to: "background"; type: "video-selected" }
+  | { channel: typeof CHANNEL; to: "background"; type: "cancel-picking" }
+  | { channel: typeof CHANNEL; to: "background"; type: "tab-videos"; tabId: number }
+  | { channel: typeof CHANNEL; to: "background"; type: "video"; target: FrameTarget; action: VideoAction }
+  | { channel: typeof CHANNEL; to: "content"; type: "video"; action: VideoAction }
   | { channel: typeof CHANNEL; to: "background" | "offscreen"; type: "runtime-status" }
   | { channel: typeof CHANNEL; to: "background"; type: "frame-status"; target: FrameTarget }
   | { channel: typeof CHANNEL; to: "content"; type: "frame-status" }
@@ -12,6 +18,19 @@ export function isRequest(value: unknown): value is Request {
   if (!value || typeof value !== "object") return false
   const m = value as Record<string, unknown>
   if (m.channel !== CHANNEL) return false
+  if (m.type === "video-selected" || m.type === "cancel-picking") return m.to === "background"
+  if (m.type === "tab-videos") return m.to === "background" && Number.isInteger(m.tabId) && Number(m.tabId) >= 0
+  if (m.type === "video") {
+    if (!m.action || typeof m.action !== "object") return false
+    const action = m.action as Record<string, unknown>
+    if (!["list", "pick", "cancel", "clear", "select", "highlight"].includes(String(action.kind))) return false
+    if (action.kind === "select" && typeof action.id !== "string") return false
+    if (action.kind === "highlight" && action.id !== null && typeof action.id !== "string") return false
+    if (m.to === "content") return true
+    if (m.to !== "background" || !m.target || typeof m.target !== "object") return false
+    const target = m.target as Record<string, unknown>
+    return Number.isInteger(target.tabId) && Number(target.tabId) >= 0 && Number.isInteger(target.frameId) && Number(target.frameId) >= 0
+  }
   if (m.type === "runtime-status") return m.to === "background" || m.to === "offscreen"
   if (m.type !== "frame-status") return false
   if (m.to === "content") return true
