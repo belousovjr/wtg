@@ -9,7 +9,7 @@ let generation = 0
 let sequence = 0
 let lastAdminSeen = 0
 let timer: ReturnType<typeof setInterval> | undefined
-let view: RoomView = { status: "idle", selfId, adminId: null, invitation: null, participants: [], shared: empty(), error: null }
+let view: RoomView = { ready: false, status: "idle", selfId, adminId: null, invitation: null, participants: [], shared: empty(), error: null }
 
 async function disconnect() {
   generation++
@@ -28,7 +28,7 @@ async function connect() {
   const isAdmin = current.adminId === selfId
   sequence = 0
   lastAdminSeen = Date.now()
-  view = { ...view, status: "waiting", adminId: current.adminId, invitation: encodeInvitation(current), participants: [selfId], error: null }
+  view = { ...view, ready: isAdmin, status: "waiting", adminId: current.adminId, invitation: encodeInvitation(current), participants: [selfId], error: null }
   try {
     room = joinRoom({ appId: "wtg-watch-together-v1", password: current.secret }, current.roomId, {
       onJoinError: () => {
@@ -63,7 +63,7 @@ async function connect() {
       if (m.kind === "hello" && isAdmin) send("snapshot", peerId)
       if (m.kind === "snapshot" && peerId === current.adminId && validShared(m.shared) && Array.isArray(m.participants) && m.participants.length <= 100 && m.participants.every(p => typeof p === "string" && p.length <= 128)) {
         lastAdminSeen = now
-        view = { ...view, status: "connected", error: null, shared: m.shared, participants: [...new Set([selfId, current.adminId, ...m.participants])] }
+        view = { ...view, ready: true, status: "connected", error: null, shared: m.shared, participants: [...new Set([selfId, current.adminId, ...m.participants])] }
       }
     }
     transport.onPeerJoin = peerId => {
@@ -101,7 +101,7 @@ export function roomCommand(command: RoomCommand): Promise<RoomView> {
     if (command.kind === "leave") {
       await disconnect()
       invite = undefined
-      view = { status: "idle", selfId, adminId: null, invitation: null, participants: [], shared: empty(), error: null }
+      view = { ready: false, status: "idle", selfId, adminId: null, invitation: null, participants: [], shared: empty(), error: null }
     }
     if (command.kind === "create" || command.kind === "join") {
       if (invite) throw new Error("Сначала выйдите из текущей комнаты")

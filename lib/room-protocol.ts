@@ -4,6 +4,7 @@ export const ROOM_VERSION = 1
 export type Invitation = { version: 1; roomId: string; secret: string; adminId: string }
 export type SharedState = { url: string | null; video: VideoDescriptor | null; playback: { position: number; paused: boolean; rate: number } }
 export type RoomView = {
+  ready: boolean
   status: "idle" | "waiting" | "connected" | "reconnecting" | "error"
   selfId: string
   adminId: string | null
