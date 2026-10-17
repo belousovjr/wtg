@@ -21,6 +21,18 @@ Only the creator can End room. Closing Chrome is not an end command. Signed
 termination notices persist and are relayed to returning participants while a
 holder is online; offline delivery cannot be guaranteed without a server.
 
+Only the creator sees Remove next to participants. Removal blocks the persistent
+public key and disables automatic rejoin on the removed client. After the first
+removal, unknown identities require explicit approval: the admin sees pending
+requests and can allow them. The Removed participants section allows readmission;
+the user then manually joins again with the same invitation. Admission policies
+survive restart and leaving/rejoining the room.
+
+All participants must update to the membership-aware wire protocol (v3).
+Existing wtg2 invitations remain valid. Without accounts a user can create new
+keys, so the admin must recognize whom they approve. Removal controls application
+membership; it cannot erase invitation secrets already held by a custom client.
+
 Refreshing a video page restores its saved binding and position on pause when
 the player is accessible. Identical tabs/ambiguous frames require manual selection.
 Storage schema/key errors stop recovery rather than silently replacing identity.

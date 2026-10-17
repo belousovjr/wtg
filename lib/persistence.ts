@@ -1,11 +1,12 @@
 import { CHANNEL } from "./messages"
 import type { StoredIdentity } from "./identity"
 import { decodeInvitation, validShared, type SharedState } from "./room-protocol"
+import { validPolicy, type MembershipPolicy } from "./membership"
 
 export type EndCertificate = { roomId: string; adminKey: string; endedAt: number; signature: string; invitation?: string }
 export type SavedSession = { invitation: string; shared: SharedState }
-export type Vault = { version: 1; identity: StoredIdentity | null; session: SavedSession | null; ended: EndCertificate[] }
-export const emptyVault = (): Vault => ({ version: 1, identity: null, session: null, ended: [] })
+export type Vault = { version: 1; identity: StoredIdentity | null; session: SavedSession | null; ended: EndCertificate[]; policies?: MembershipPolicy[] }
+export const emptyVault = (): Vault => ({ version: 1, identity: null, session: null, ended: [], policies: [] })
 export function validCertificate(value: unknown): value is EndCertificate {
   if (!value || typeof value !== "object") return false
   const c = value as EndCertificate
@@ -23,7 +24,9 @@ export function validateVault(value: unknown): Vault {
     decodeInvitation(v.session.invitation)
   }
   if (!Array.isArray(v.ended) || !v.ended.every(validCertificate)) throw new Error("Повреждён список завершённых комнат")
-  return v
+  if (v.policies !== undefined && (!Array.isArray(v.policies) || !v.policies.every(validPolicy))) throw new Error("Повреждены правила допуска участников")
+  // Additive migration of earlier version-1 vaults, preserving identity/session.
+  return { ...v, policies: v.policies || [] }
 }
 export async function vaultRequest(operation: "read" | "write", value?: Vault): Promise<Vault> {
   const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "vault", operation, value })

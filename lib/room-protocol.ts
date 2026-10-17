@@ -1,9 +1,13 @@
 import type { VideoDescriptor } from "./video"
+import type { MemberCommand } from "./membership"
 
 export const ROOM_VERSION = 2
 export type Invitation = { version: 2; roomId: string; secret: string; adminKey: string }
 export type SharedState = { url: string | null; video: VideoDescriptor | null; playback: { position: number; paused: boolean; rate: number } }
 export type RoomView = {
+  pendingParticipants: { peerId: string; publicKey: string }[]
+  blockedKeys: string[]
+  approvalRequired: boolean
   isAdmin: boolean
   ready: boolean
   status: "idle" | "waiting" | "connected" | "reconnecting" | "error"
@@ -15,6 +19,7 @@ export type RoomView = {
   error: string | null
 }
 export type RoomCommand =
+  | MemberCommand
   | { kind: "status" }
   | { kind: "create"; initial?: SharedState }
   | { kind: "join"; invitation: string }
@@ -52,6 +57,8 @@ export function validShared(value: unknown): value is SharedState {
 export function validRoomCommand(value: unknown): value is RoomCommand {
   if (!value || typeof value !== "object") return false
   const c = value as RoomCommand
+  if (c.kind === "remove" || c.kind === "approve") return typeof c.peerId === "string" && c.peerId.length > 0 && c.peerId.length <= 128
+  if (c.kind === "readmit") return typeof c.publicKey === "string" && /^[A-Za-z0-9_-]{87}$/.test(c.publicKey)
   if (["status", "leave", "retry", "end"].includes(c.kind)) return true
   if (c.kind === "join") return typeof c.invitation === "string" && c.invitation.length <= 2048
   return c.kind === "create" && (c.initial === undefined || validShared(c.initial))
