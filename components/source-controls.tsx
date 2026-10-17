@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react"
 import { CHANNEL } from "../lib/messages"
-import { decodeInvitation, type RoomCommand, type RoomView } from "../lib/room-protocol"
-import { sourceRevision } from "../lib/source"
-export function SourceControls({ room, perform, busy }: { room: RoomView; perform: (command: RoomCommand) => Promise<void>; busy: boolean }) {
-  const [url, setUrl] = useState(room.shared.url || "")
+import { decodeInvitation, type RoomView } from "../lib/room-protocol"
+import { sameFrameLocation } from "../lib/source"
+export function SourceControls({ room }: { room: RoomView }) {
   const [tabError, setTabError] = useState("")
   const [tabBusy, setTabBusy] = useState(false)
   const [isViewingTab, setIsViewingTab] = useState(false)
   const [hasViewingTab, setHasViewingTab] = useState(false)
+  const [wrongUrl, setWrongUrl] = useState(false)
   useEffect(() => {
     let active = true
     const refresh = async () => {
@@ -15,14 +15,25 @@ export function SourceControls({ room, perform, busy }: { room: RoomView; perfor
       const viewer = stored.sourceViewer
       if (!active) return
       const belongs = !!room.invitation && viewer?.roomId === decodeInvitation(room.invitation).roomId
-      setHasViewingTab(belongs && !!viewer?.boundByUser && !viewer.closed)
-      setIsViewingTab(belongs && !!viewer?.boundByUser && !viewer.closed && viewer.tabId === tabs[0]?.id)
+      const viewingTab = belongs && viewer?.boundByUser && !viewer.closed ? await chrome.tabs.get(viewer.tabId).catch(() => undefined) : undefined
+      if (!active) return
+      if (!viewingTab && room.shared.url && sameFrameLocation(tabs[0]?.url || "", room.shared.url)) {
+        const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "source-auto-attach" })
+        if (!active) return
+        if (reply?.ok && reply.data?.tabId === tabs[0]?.id) {
+          setHasViewingTab(true); setIsViewingTab(true); setWrongUrl(false)
+          return
+        }
+      }
+      setWrongUrl(!!viewingTab && !!room.shared.url && !sameFrameLocation(viewingTab.url || "", room.shared.url))
+      setHasViewingTab(!!viewingTab)
+      setIsViewingTab(!!viewingTab && viewer.tabId === tabs[0]?.id)
     }
     void refresh().catch(() => {})
     const timer = setInterval(() => void refresh().catch(() => {}), 2000)
     return () => { active = false; clearInterval(timer) }
-  }, [room.invitation])
-  async function tabAction(type: "source-focus" | "source-attach") {
+  }, [room.invitation, room.shared.url])
+  async function tabAction(type: "source-focus" | "source-attach" | "source-open-url") {
     setTabBusy(true)
     setTabError("")
     try {
@@ -31,27 +42,19 @@ export function SourceControls({ room, perform, busy }: { room: RoomView; perfor
     } catch (error) { setTabError(error instanceof Error ? error.message : "Вкладка просмотра недоступна") }
     finally { setTabBusy(false) }
   }
-  useEffect(() => { setUrl(room.shared.url || "") }, [room.shared.url])
   return <section>
     <h4>Просмотр</h4>
     {room.shared.url && <p style={{ overflowWrap: "anywhere" }}>{room.shared.url}</p>}
-    <details open={!room.shared.url}><summary>{room.shared.url ? "Сменить страницу" : "Выбрать страницу"}</summary>
-    <form onSubmit={event => {
-      event.preventDefault()
-      void perform({ kind: "source", url, video: null, expectedRevision: sourceRevision(room.shared), commandId: crypto.randomUUID() })
-    }}>
-      <label>Общий URL<input type="url" required value={url} onChange={event => setUrl(event.target.value)} placeholder="https://…" style={{ width: "100%", boxSizing: "border-box" }} /></label>
-      <button disabled={busy || !room.ready || url === room.shared.url}>Открыть у всех</button>
-    </form>
-    </details>
+    {!room.shared.url && <p>Открой нужную страницу и выбери плеер кнопкой «Выбрать для всех» — его URL передастся вместе с видео.</p>}
     {room.shared.url && <>
       {!room.shared.video && <p>Страница задана. Теперь выбери видео для группы в списке ниже.</p>}
       {room.sourceReadiness[room.selfId]?.status === "unavailable" && <p>Вкладка просмотра не привязана, закрыта или плеер недоступен.</p>}
       {!isViewingTab && hasViewingTab && <button disabled={tabBusy} onClick={() => void tabAction("source-focus")}>К вкладке просмотра</button>}
-      {!hasViewingTab ? <button disabled={tabBusy} onClick={() => void tabAction("source-attach")}>Смотреть в этой вкладке</button> : !isViewingTab && <details><summary>Перенести просмотр сюда</summary>
+      {wrongUrl && <button disabled={tabBusy} onClick={() => void tabAction("source-open-url")}>Открыть страницу просмотра</button>}
+      {!hasViewingTab ? <button disabled={tabBusy} onClick={() => void tabAction("source-attach")}>Смотреть в этой вкладке</button> : !isViewingTab && <div>
         <p>Текущая вкладка станет вкладкой просмотра и откроет общий URL.</p>
         <button disabled={tabBusy} onClick={() => void tabAction("source-attach")}>Перенести в эту вкладку</button>
-      </details>}
+      </div>}
     </>}
     {tabError && <p role="alert">{tabError}</p>}
   </section>

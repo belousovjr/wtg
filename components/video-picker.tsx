@@ -103,10 +103,10 @@ export function VideoPicker() {
     {room?.shared.video && <p>{data?.frames.flatMap(frame => frame.snapshot.videos).find(video => sameVideoSelection(video.descriptor, room.shared.video))?.label || "Общий плеер"} · {data?.frames.some(frame => locallyBound(frame)) ? "✓ Привязан у тебя" : "Привязка на этой странице не подтверждена"}</p>}
     {pending && <p role="status">⏳ Применяем выбор для комнаты…</p>}
     {!pending && notice && <p role="status">{notice}</p>}
-    <details open={!room?.shared.video || (room.sourceReadiness[room.selfId]?.status === "needs-video")}><summary>{room?.shared.video ? "Сменить плеер / исправить привязку" : `Доступные плееры (${count})`}</summary>
-    <details><summary>Выбрать на странице вместо списка</summary>
+    <div>
+    <p>Доступные плееры ({count})</p>
     <button disabled={busy || !data?.frames.length} onClick={pick}>Указать мой плеер</button>
-    <p>Локальная привязка: наведи на плеер и нажми. Escape — отмена. Затем открой расширение снова; общий выбор меняется кнопкой «Выбрать для всех».</p></details>
+    <p>Локальная привязка: наведи на плеер и нажми. Escape — отмена. Затем открой расширение снова; общий выбор меняется кнопкой «Выбрать для всех».</p>
     {data?.frames.map(frame => <div key={frame.frameId}>
       {!locallyBound(frame) && frame.snapshot.notice && <p role="status">{frame.snapshot.notice}</p>}
       {!locallyBound(frame) && (frame.snapshot.binding === "missing" || frame.snapshot.binding === "ambiguous") ? <p role="status">Привязка на этой странице потеряна. Выбери плеер у себя.</p> : null}
@@ -119,7 +119,7 @@ export function VideoPicker() {
         {video.poster && <img src={video.poster} alt="" referrerPolicy="no-referrer" style={{ maxWidth: "100%", maxHeight: 100 }} />}
         <strong>{video.label}</strong>
           <details>
-            <summary>Локальный селектор этой карточки</summary>
+            <summary>Диагностика локального селектора</summary>
             <code>{video.descriptor.selector}</code>
             {!!video.descriptor.shadowPath.length && <p><small>Shadow DOM: </small><code>{video.descriptor.shadowPath.join(" → ")}</code></p>}
           </details>
@@ -130,7 +130,7 @@ export function VideoPicker() {
       </article>)}
     </div>)}
     {data && !count && <p>Доступные видео не найдены. Запусти плеер или обнови страницу. Закрытые Shadow DOM недоступны.</p>}
-    </details>
+    </div>
     <details><summary>Диагностика плеера</summary>
       <button onClick={() => void refresh()}>Обновить список</button>
       {room?.shared.video && <div style={{ overflowWrap: "anywhere" }}>

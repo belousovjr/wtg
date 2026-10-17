@@ -73,21 +73,21 @@ export function RoomPanel() {
           <button disabled={busy} onClick={() => void perform({ kind: "approve", peerId: member.peerId })}>Разрешить вход</button>
         </li>)}</ul>
       </div>}
-      {room.isAdmin && room.blockedKeys.length > 0 && <details>
-        <summary>Удалённые участники ({room.blockedKeys.length})</summary>
+      {room.isAdmin && room.blockedKeys.length > 0 && <section>
+        <h4>Удалённые участники ({room.blockedKeys.length})</h4>
         <ul>{room.blockedKeys.map(key => <li key={key}>{key.slice(0, 12)}{" "}
           <button disabled={busy} onClick={() => void perform({ kind: "readmit", publicKey: key })}>Разрешить снова</button>
         </li>)}</ul>
-      </details>}
+      </section>}
       {copyFailed && <textarea aria-label="Приглашение комнаты" readOnly value={room.invitation || ""} style={{ width: "100%", boxSizing: "border-box" }} />}
       <button onClick={copy}>{copied ? "Скопировано" : "Пригласить"}</button>{" "}
       </>}
-      <details><summary aria-label="Меню комнаты">⋯ Комната</summary>
+      <div style={{ marginTop: 8 }}>
       <button disabled={busy} onClick={() => void perform({ kind: "leave" })}>Выйти</button>
       {room.isAdmin && <button disabled={busy} onClick={() => { if (window.confirm("Завершить комнату для всех?")) void perform({ kind: "end" }) }}>Завершить комнату</button>}
-      </details>
+      </div>
       {(room.status === "error" || room.status === "reconnecting") && <p><button disabled={busy} onClick={() => void perform({ kind: "retry" })}>Повторить подключение</button></p>}
-      {room.ready && <SourceControls room={room} perform={perform} busy={busy} />}
+      {room.ready && <SourceControls room={room} />}
       {room.ready && <VideoPicker />}
       {room.ready && <details><summary>Диагностика синхронизации</summary>
         <p>{room.sync?.preparation ? "Подготовка общего запуска" : room.sync?.command ? room.sync.command.paused ? "Общая пауза" : "Общий таймлайн воспроизведения" : "Ожидаем команды плеера"}</p>

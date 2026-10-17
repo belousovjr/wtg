@@ -8,7 +8,7 @@ export function GroupPlayerStatus({ room, remove, busy }: { room: RoomView; remo
     <strong role="status">{!room.ready ? "Нет связи с координатором" : !room.shared.video ? "Видео для группы ещё не выбрано" : group.allReady ? `✓ Плееры привязаны у всех (${group.total} из ${group.total})` : `Плеер привязан у ${group.bound} из ${group.total} участников`}</strong>
     <ul style={{ paddingLeft: 20, marginBottom: 0 }}>{group.members.map(member => <li key={member.id}>
       <strong>{member.id === room.selfId ? "Ты" : `Участник ${member.id.slice(0, 6)}`}{member.id === room.adminId ? " · админ" : ""}</strong>: {member.text}
-      {room.isAdmin && member.id !== room.selfId && remove && <details><summary>Действия</summary><button disabled={busy} onClick={() => remove(member.id)}>Удалить участника</button></details>}
+      {room.isAdmin && member.id !== room.selfId && remove && <button disabled={busy} onClick={() => remove(member.id)}>Удалить участника</button>}
     </li>)}</ul>
     {room.shared.video && !group.allReady && <p style={{ marginBottom: 0 }}>Общий выбор сохранён. Зелёный статус появится, когда плееры будут привязаны и готовы у всех.</p>}
   </section>

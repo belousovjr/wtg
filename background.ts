@@ -2,7 +2,7 @@ import { CHANNEL, isRequest, type Request } from "./lib/messages"
 import { validateVault } from "./lib/persistence"
 import { decodeInvitation } from "./lib/room-protocol"
 import { handleBindingMessage } from "./lib/bindings"
-import { applySourceState, bindSourceTab, closeSource, focusSource, forwardPlaybackEvent, refreshSource, selectLocalSource } from "./lib/source-viewer"
+import { applySourceState, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, selectLocalSource } from "./lib/source-viewer"
 
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
@@ -24,7 +24,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     void focusSource().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Вкладка недоступна" }))
     return true
   }
-  if (message.type === "source-attach" && !sender.tab) {
+  if (message.type === "source-open-url" && !sender.tab) {
+    void openSourceUrl().then(() => respond({ ok: true }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Страница недоступна" }))
+    return true
+  }
+  if ((message.type === "source-attach" || message.type === "source-auto-attach") && !sender.tab) {
     void (async () => {
       // Capture once at the explicit action, never infer a tab from later activity.
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
@@ -32,7 +36,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       await ensureOffscreen()
       const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "offscreen", type: "room", command: { kind: "status" } })
       if (!reply?.ok || !reply.data.invitation) throw new Error("Сначала подключись к комнате")
-      return bindSourceTab(tab.id, decodeInvitation(reply.data.invitation).roomId)
+      return bindSourceTab(tab.id, decodeInvitation(reply.data.invitation).roomId, message.type === "source-auto-attach")
     })().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Вкладка недоступна" }))
     return true
   }

@@ -56,10 +56,10 @@ async function reconcile() {
     viewer = { boundByUser: true, roomId: state.roomId, revision, url, tabId: tab.id! }
     await persist()
     lastReport = ""
-    if (webUrl(tab.url || "") !== url) { await chrome.tabs.update(tab.id!, { url }); await report("loading-page"); return }
+    if (!sameFrameLocation(tab.url || "", url)) { await chrome.tabs.update(tab.id!, { url }); await report("loading-page"); return }
   }
   if (tab.status === "loading") { await report("loading-page"); return }
-  if (webUrl(tab.url || "") !== url) { await report("wrong-page"); return }
+  if (!sameFrameLocation(tab.url || "", url)) { await report("wrong-page"); return }
   const descriptor = viewer?.override?.descriptor || state.shared.video
   if (!descriptor) { await report("needs-video"); return }
   const frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id! }) || []
@@ -118,10 +118,17 @@ export function forwardPlaybackEvent(sender: chrome.runtime.MessageSender, messa
 export function refreshSource(tabId: number) {
   return serial(async () => { await load(); if (viewer?.tabId === tabId) await reconcile(); return viewer?.tabId === tabId ? viewer : null })
 }
-export function bindSourceTab(tabId: number, roomId: string) {
+export function bindSourceTab(tabId: number, roomId: string, onlyIfMatching = false) {
   return serial(async () => {
     await load()
-    await chrome.tabs.get(tabId)
+    const tab = await chrome.tabs.get(tabId)
+    if (onlyIfMatching) {
+      if (!state?.ready || state.roomId !== roomId || !state.shared.url || !sameFrameLocation(tab.url || "", state.shared.url)) return viewer
+      if (viewer?.roomId === roomId && !viewer.closed) {
+        const existing = await chrome.tabs.get(viewer.tabId).catch(() => undefined)
+        if (existing) return viewer
+      }
+    }
     await suspendViewer()
     viewer = { boundByUser: true, roomId, revision: -1, url: "", tabId }
     lastReport = ""
@@ -142,6 +149,22 @@ export function focusSource() {
     await chrome.tabs.update(viewer.tabId, { active: true })
     if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true })
     return viewer
+  })
+}
+export function openSourceUrl() {
+  return serial(async () => {
+    await load()
+    const url = webUrl(state?.shared.url || "")
+    if (!state?.ready || !state.roomId || !url) throw new Error("Страница просмотра пока недоступна")
+    if (!viewer || viewer.closed || viewer.roomId !== state.roomId) throw new Error("Вкладка просмотра не привязана или закрыта")
+    let tab: chrome.tabs.Tab
+    try { tab = await chrome.tabs.get(viewer.tabId) }
+    catch { viewer.closed = true; await persist(); await report("unavailable"); throw new Error("Вкладка просмотра закрыта") }
+    if (!sameFrameLocation(tab.url || "", url)) {
+      await suspendViewer()
+      await chrome.tabs.update(viewer.tabId, { url })
+      await report("loading-page")
+    } else await reconcile()
   })
 }
 export function closeSource(tabId: number) {

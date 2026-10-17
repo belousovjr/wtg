@@ -72,7 +72,13 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   await viewer.applySourceState({ roomId: "room", ready: true, shared })
   assert.equal(created, 0)
   assert.equal(reports.at(-1).status, "unavailable")
-  await viewer.bindSourceTab(1, "room")
+  await viewer.bindSourceTab(99, "room", true)
+  assert.equal(session.sourceViewer, undefined) // Unrelated active page cannot auto-bind.
+  await viewer.bindSourceTab(1, "room", true)
+  tabs.get(99).url = shared.url
+  await viewer.bindSourceTab(99, "room", true)
+  assert.equal(session.sourceViewer.tabId, 1) // Never steal a live viewing tab.
+  tabs.get(99).url = "https://unrelated.example.com"
   assert.equal(navigations.length, 0) // Already at the source: no reload.
   await viewer.refreshSource(1)
   assert.equal(reports.at(-1).status, "needs-video")
@@ -80,6 +86,18 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   assert.equal(reports.at(-1).status, "ready")
   assert.equal(bound.at(-1).descriptor.selector, "#local-player")
   assert.equal(bound.at(-1).shared, false)
+  tabs.get(1).url = "https://example.com/elsewhere"
+  await viewer.openSourceUrl()
+  assert.equal(tabs.get(1).url, shared.url)
+  assert.equal(tabs.get(99).url, "https://unrelated.example.com")
+  const afterReturn = navigations.length
+  await viewer.openSourceUrl()
+  assert.equal(navigations.length, afterReturn) // Already at shared URL: no reload.
+  tabs.get(1).url = `${shared.url}?token=local#position`
+  await viewer.openSourceUrl()
+  await viewer.refreshSource(1)
+  assert.equal(navigations.length, afterReturn) // Query/hash changes are the same viewing page.
+  assert.notEqual(reports.at(-1).status, "wrong-page")
   assert.equal(shared.video.selector, "#video") // Local mapping never changes shared descriptor.
   const updated = { ...shared, url: "https://example.com/next", video: null, sourceRevision: 2 }
   await viewer.applySourceState({ roomId: "room", ready: true, shared: updated })
@@ -93,6 +111,7 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   await viewer.applySourceState({ roomId: "room", ready: true, shared: updated })
   assert.equal(tabs.size, 1)
   await assert.rejects(viewer.focusSource(), /закрыта/)
+  await assert.rejects(viewer.openSourceUrl(), /закрыта/)
   await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...updated, sourceRevision: 3 } })
   assert.equal(created, 0)
   assert.equal(tabs.get(99).url, "https://unrelated.example.com") // New revision is not consent to use another tab.
