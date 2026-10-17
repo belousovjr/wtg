@@ -33,6 +33,12 @@ export function validPlayerReport(v: unknown): v is PlayerReport {
 export function positionAt(command: Commit, coordinatorTime: number) {
   return command.position + (command.paused ? 0 : Math.max(0, coordinatorTime - command.executeAt) / 1000 * command.rate)
 }
+export function driftCorrection(error: number, rate: number, uncertainty = 0) {
+  const deadband = Math.max(0.08, Math.min(0.3, uncertainty / 1000))
+  if (Math.abs(error) >= 0.8) return { seek: true, rate }
+  if (Math.abs(error) <= deadband) return { seek: false, rate }
+  return { seek: false, rate: Math.max(0.25, Math.min(4, rate * (1 + Math.max(-0.05, Math.min(0.05, error / 4))))) }
+}
 export function clockSample(t0: number, t1: number, t2: number, t3: number): ClockEstimate | null {
   const rtt = (t3 - t0) - (t2 - t1)
   if (![t0, t1, t2, t3].every(Number.isFinite) || t3 < t0 || t2 < t1 || rtt < 0 || rtt > 10000) return null
@@ -63,6 +69,7 @@ export class PlaybackSession {
   private seen = new Set<string>()
   private preparationCommand: PlaybackRequest | null = null
   private lastPing = 0
+  private lastBroadcast = 0
   private lastAdmin: string | null = null
   private disposed = false
   private timer: ReturnType<typeof setInterval>
@@ -88,6 +95,7 @@ export class PlaybackSession {
     if (w.command && (w.command.epoch !== w.epoch || w.command.revision !== this.options.revision())) return
     if (w.command && w.command.sequence !== w.sequence) return
     if (w.preparation && (w.preparation.epoch !== w.epoch || w.preparation.revision !== this.options.revision())) return
+    if (w.epoch === this.epoch && w.sequence < this.sequence) return
     if (w.epoch === this.epoch && w.command && this.command && w.command.sequence < this.command.sequence) return
     const fresh = w.epoch !== this.epoch || w.command?.sequence !== this.command?.sequence
     if (w.epoch !== this.epoch) { this.clock = null; this.samples = []; this.pings.clear(); this.lastPing = 0 }
@@ -191,6 +199,10 @@ export class PlaybackSession {
     } else if (this.preparation && this.preparationCommand) {
       const everyone = this.options.participants().every(id => this.players[id]?.preparationId === this.preparation!.id && this.players[id]?.status === "ready" && (id === this.options.selfId || this.clocks.has(id)))
       if (everyone || now() >= this.preparation.deadline) await this.commit(this.preparationCommand, false, startLead([...this.clocks.values()]))
+    }
+    if (this.options.isAdmin && now() - this.lastBroadcast >= 2000) {
+      this.lastBroadcast = now()
+      await this.broadcast()
     }
   }
 }

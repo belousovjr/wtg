@@ -73,6 +73,8 @@ test("coordinator prepares, waits for three clock samples, schedules future star
     await guest.receive("pb-commit", { command: { ...host.wire().command, sequence: 4 } }, "host", true)
     assert.ok(sent.includes("pb-resync"))
     assert.equal(guest.wire().command.sequence, 2)
+    await guest.acceptSnapshot({ ...host.wire(), sequence: 1, command: null, preparation: null })
+    assert.equal(guest.wire().command.sequence, 2) // Old empty snapshots cannot erase an applied command.
     rev = 1
     await host.tick(); await guest.tick()
     assert.equal(host.wire().command, null)
@@ -176,6 +178,84 @@ test("manual seek survives state refreshes but not source, epoch, room or player
     change(); flush()
     assert.equal(events.length, 2)
   }
+})
+
+test("preparation refresh does not repeat seeking and early timer waits for executeAt", () => {
+  const clock = { time: 1000 }, tasks = []
+  let seeks = 0, plays = 0
+  const video = { isConnected: true, readyState: 4, duration: 100, seeking: false, paused: true, playbackRate: 1,
+    position: 0, seekable: { length: 1, start: () => 0, end: () => 100 },
+    get currentTime() { return this.position }, set currentTime(value) { seeks++; this.position = value },
+    addEventListener() {}, removeEventListener() {}, pause() {}, play() { plays++; return Promise.resolve() } }
+  const pb = load("playback", clock), player = load("player-sync", clock, { "./playback": pb }, {
+    setTimeout: fn => { tasks.push(fn); return tasks.length }, clearTimeout: () => {}
+  })
+  const sync = new player.PlayerSync(() => video, () => {})
+  const prep = { epoch: "epoch", revision: 0, id: "prep", position: 10, rate: 1, deadline: 5000 }
+  const state = { epoch: "epoch", command: null, preparation: prep, players: {}, clock: { offset: 0, rtt: 0, uncertainty: 0 } }
+  sync.update("room", 0, state)
+  video.position = 9.5
+  sync.update("room", 0, { ...state })
+  assert.equal(seeks, 1)
+  const command = { epoch: "epoch", revision: 0, sequence: 1, commandId: crypto.randomUUID(), executeAt: 1500, position: 10, paused: false, rate: 1 }
+  sync.update("room", 0, { ...state, preparation: null, command })
+  tasks.shift()() // Simulate a timer that woke early.
+  assert.equal(plays, 0)
+  clock.time = 1500
+  tasks.shift()()
+  assert.equal(plays, 1)
+  sync.update("room", 0, null)
+})
+
+test("drift correction respects base speed, deadband, bounds and large errors", () => {
+  const pb = load("playback", { time: 0 })
+  assert.equal(pb.driftCorrection(0.04, 1.5).rate, 1.5)
+  assert.ok(pb.driftCorrection(0.3, 1.5).rate > 1.5)
+  assert.ok(pb.driftCorrection(-0.3, 1.5).rate < 1.5)
+  assert.equal(pb.driftCorrection(0.3, 4).rate, 4)
+  assert.equal(pb.driftCorrection(-0.3, 0.25).rate, 0.25)
+  assert.equal(pb.driftCorrection(0.1, 1, 200).rate, 1)
+  assert.equal(pb.driftCorrection(0.8, 1).seek, true)
+})
+
+test("continuous correction changes rate then restores it, seeks large drift without echoes and yields to manual seeks", async () => {
+  const clock = { time: 1000 }, tasks = [], events = []
+  let tick
+  class Video extends EventTarget {
+    isConnected = true; readyState = 4; duration = 100; seeking = false; paused = true; position = 0; rate = 1
+    seekable = { length: 1, start: () => 0, end: () => 100 }
+    get currentTime() { return this.position }
+    set currentTime(value) { this.position = value; this.dispatchEvent(new Event("seeking")); this.dispatchEvent(new Event("seeked")) }
+    get playbackRate() { return this.rate }
+    set playbackRate(value) { this.rate = value; this.dispatchEvent(new Event("ratechange")) }
+    pause() { this.paused = true }
+    play() { this.paused = false; this.dispatchEvent(new Event("play")); return Promise.resolve() }
+  }
+  const pb = load("playback", clock), player = load("player-sync", clock, { "./playback": pb }, {
+    setInterval: fn => { tick = fn; return 1 }, clearInterval: () => { tick = undefined },
+    setTimeout: fn => { tasks.push(fn); return tasks.length }, clearTimeout: () => {}
+  })
+  const video = new Video(), sync = new player.PlayerSync(() => video, (_r, _v, message) => events.push(message))
+  const command = { epoch: "epoch", revision: 0, sequence: 1, commandId: crypto.randomUUID(), executeAt: 1000, position: 10, paused: false, rate: 1.5 }
+  sync.update("room", 0, { epoch: "epoch", command, preparation: null, players: {}, clock: { offset: 0, rtt: 0, uncertainty: 0 } })
+  tasks.shift()(); await Promise.resolve()
+  video.position = 9.7; tick()
+  assert.ok(video.rate > 1.5)
+  video.position = 10; tick()
+  assert.equal(video.rate, 1.5)
+  video.position = 5; tick()
+  assert.equal(video.position, 10)
+  assert.equal(events.filter(e => e.kind === "request").length, 0)
+  clock.time += 1100
+  video.readyState = 1; video.position = 5; tick()
+  assert.equal(video.position, 5) // Buffering never issues a group pause or forced seek.
+  video.readyState = 4; tick()
+  assert.equal(video.position, 11.65)
+  clock.time += 1100
+  video.position = 30; video.dispatchEvent(new Event("seeked")); tick()
+  assert.equal(video.position, 30) // Explicit action is not pulled back to old timeline.
+  sync.update("room", 0, null)
+  assert.equal(tick, undefined)
 })
 
 test("autoplay denial reports blocked and unlock calls play directly without broadcasting a new user command", async () => {

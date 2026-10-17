@@ -1,4 +1,4 @@
-import { now, positionAt, validCommit, validPreparation, type PlaybackLocal, type PlaybackRequest, type PlayerReport } from "./playback"
+import { driftCorrection, now, positionAt, validCommit, validPreparation, type PlaybackLocal, type PlaybackRequest, type PlayerReport } from "./playback"
 
 type EventMessage = { kind: "request"; request: PlaybackRequest } | { kind: "report"; report: PlayerReport }
 export class PlayerSync {
@@ -15,11 +15,16 @@ export class PlayerSync {
   private expectedRate = 1
   private overlay?: HTMLDivElement
   private lastReport = ""
+  private correctionTimer?: ReturnType<typeof setInterval>
+  private pendingManual = false
+  private userSeeking = false
+  private correctionUntil = 0
   constructor(private getVideo: () => HTMLVideoElement | undefined, private send: (roomId: string, revision: number, message: EventMessage) => void) {}
   bind() {
     const video = this.getVideo()
     if (video === this.video) return
     clearTimeout(this.seekTimer)
+    this.pendingManual = false; this.userSeeking = false
     if (this.video) { this.expectedPaused = true; this.video.pause() }
     for (const name of ["play", "pause", "seeking", "seeked", "ratechange", "canplay", "loadedmetadata"]) this.video?.removeEventListener(name, this.onEvent)
     this.video = video; this.applied = ""; this.prepared = ""; this.scheduled = ""
@@ -32,11 +37,13 @@ export class PlayerSync {
   }
   update(roomId: string, revision: number, playback: PlaybackLocal | null) {
     if (!playback) {
+      clearInterval(this.correctionTimer); this.correctionTimer = undefined
       this.context = undefined; clearTimeout(this.timer); clearTimeout(this.seekTimer)
       this.expectedPaused = true; this.video?.pause(); this.overlay?.remove(); this.overlay = undefined
       this.applied = ""; this.scheduled = ""; this.prepared = ""; this.lastReport = ""
       return
     }
+    if (!this.correctionTimer) this.correctionTimer = setInterval(() => this.correctDrift(), 250)
     if (this.context?.playback.epoch === playback.epoch && this.context.revision === revision && playback.command && this.context.playback.command && playback.command.sequence < this.context.playback.command.sequence) return
     if (playback.command && !validCommit(playback.command) || playback.preparation && !validPreparation(playback.preparation)) return
     if (this.context?.roomId !== roomId || this.context.revision !== revision || this.context.playback.epoch !== playback.epoch) {
@@ -45,6 +52,8 @@ export class PlayerSync {
       this.expectedPaused = true
       this.overlay?.remove(); this.overlay = undefined
     }
+    if (this.context?.playback.command?.sequence !== playback.command?.sequence || this.context?.playback.preparation?.id !== playback.preparation?.id)
+      this.pendingManual = false
     this.context = { roomId, revision, playback }
     this.bind()
     const video = this.video
@@ -53,7 +62,7 @@ export class PlayerSync {
     if (prep && prep.revision === revision) {
       clearTimeout(this.timer); this.scheduled = ""
       this.expectedPaused = true; video.pause()
-      if (!this.seek(prep.position, prep.rate)) return
+      if (this.prepared !== prep.id && !this.seek(prep.position, prep.rate)) return
       this.prepared = prep.id
       this.report(video.seeking || video.readyState < 2 ? "loading" : "ready")
       return
@@ -70,6 +79,11 @@ export class PlayerSync {
       this.scheduled = ""
       if (this.context?.playback.command?.sequence !== command.sequence || this.context.playback.epoch !== command.epoch || this.context.playback.preparation) return
       const coordinatorTime = now() + this.context.playback.clock!.offset
+      if (coordinatorTime < command.executeAt) {
+        this.scheduled = id
+        this.timer = setTimeout(execute, command.executeAt - coordinatorTime)
+        return
+      }
       if (!this.seek(positionAt(command, coordinatorTime), command.rate)) return
       this.expectedPaused = command.paused
       this.applied = id
@@ -85,6 +99,31 @@ export class PlayerSync {
     }
     this.timer = setTimeout(execute, Math.max(0, command.executeAt - playback.clock.offset - now()))
   }
+  private correctDrift() {
+    const c = this.context, video = this.video, command = c?.playback.command
+    if (!c || !video?.isConnected || !command || !c.playback.clock || c.playback.preparation ||
+      command.revision !== c.revision || this.pendingManual || this.userSeeking || video.seeking ||
+      this.applied !== `${command.epoch}:${command.sequence}` || now() < this.correctionUntil) return
+    if (video.readyState < 2) { this.report("loading", "Буферизация · догоним после загрузки"); return }
+    if (!Number.isFinite(video.duration) || video.duration <= 0) return
+    const target = Math.min(positionAt(command, now() + c.playback.clock.offset), Math.max(0, video.duration - 0.05))
+    const error = target - video.currentTime
+    // Never resume a locally paused/blocked player or override an ongoing manual action.
+    if (!command.paused && video.paused) return
+    const correction = driftCorrection(error, command.rate, c.playback.clock.uncertainty)
+    if (correction.seek || command.paused && Math.abs(error) > 0.08) {
+      if (!this.seek(target, command.rate)) return
+      this.correctionUntil = now() + 1000
+    } else {
+      const rate = command.paused ? command.rate : correction.rate
+      if (Math.abs(video.playbackRate - rate) > 0.001) {
+        this.expectedRate = rate
+        try { video.playbackRate = rate } catch { return }
+      }
+    }
+    console.debug("[WTG sync] Коррекция таймлайна", { driftMs: Math.round(error * 1000), rate: video.playbackRate, seek: correction.seek })
+    this.report("ready")
+  }
   private seek(position: number, rate: number) {
     const video = this.video!
     if (video.readyState < 1) { this.report("loading", "Ждём metadata видео"); return false }
@@ -96,7 +135,7 @@ export class PlayerSync {
     try {
       this.expectedPosition = target; this.expectedRate = rate
       video.playbackRate = rate
-      if (Math.abs(video.currentTime - target) > 0.15) { this.remoteSeekUntil = now() + 1000; video.currentTime = target }
+      if (Math.abs(video.currentTime - target) > 0.04) { this.remoteSeekUntil = now() + 1000; video.currentTime = target }
       return true
     } catch { this.report("error", "Плеер не разрешает перемотку"); return false }
   }
@@ -115,19 +154,24 @@ export class PlayerSync {
     if ((event.type === "seeking" || event.type === "seeked") && video && event.target === video)
       console.info(`[WTG seek] ${event.type} перехвачен`, { position: video.currentTime, paused: video.paused, activeContext: !!c, revision: c?.revision })
     // Seeking is diagnostic only: broadcast the settled position once seeked arrives.
-    if (event.type === "seeking") return
+    if (event.type === "seeking") {
+      if (video && event.target === video) this.userSeeking = !(now() <= this.remoteSeekUntil && Math.abs(video.currentTime - this.expectedPosition) < 0.3)
+      return
+    }
     if (!c || !video || event.target !== video) return
     if (event.type === "canplay" || event.type === "loadedmetadata") { this.update(c.roomId, c.revision, c.playback); return }
     if (event.type === "play" || event.type === "pause") {
       if (video.paused === this.expectedPaused) return
     } else if (event.type === "seeked") {
+      this.userSeeking = false
       if (now() <= this.remoteSeekUntil && Math.abs(video.currentTime - this.expectedPosition) < 0.3) {
         console.info("[WTG seek] Подавлено как эхо общей команды", { position: video.currentTime, expectedPosition: this.expectedPosition })
         if (c.playback.preparation && !video.seeking && video.readyState >= 2) this.report("ready")
         return
       }
     } else if (event.type === "ratechange" && Math.abs(video.playbackRate - this.expectedRate) < 0.001) return
-    const request: PlaybackRequest = { epoch: c.playback.epoch, commandId: crypto.randomUUID(), revision: c.revision, action: event.type === "play" ? "play" : event.type === "pause" ? "pause" : event.type === "seeked" ? "seek" : "rate", position: video.currentTime, rate: video.playbackRate }
+    this.pendingManual = true
+    const request: PlaybackRequest = { epoch: c.playback.epoch, commandId: crypto.randomUUID(), revision: c.revision, action: event.type === "play" ? "play" : event.type === "pause" ? "pause" : event.type === "seeked" ? "seek" : "rate", position: video.currentTime, rate: event.type === "ratechange" ? video.playbackRate : c.playback.command?.rate ?? video.playbackRate }
     if (event.type === "play") { this.expectedPaused = true; video.pause() }
     const dispatch = () => {
       const current = this.context

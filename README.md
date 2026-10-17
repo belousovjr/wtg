@@ -75,7 +75,10 @@ are under popup diagnostics; readiness/errors share the single participant list.
 If Chrome blocks autoplay, click “Разрешить воспроизведение” on the video page.
 This unlocks only the local player and catches it up with the shared timeline.
 Finite-duration HTML video and 0.25–4x speed are supported in this stage. Live
-streams and ongoing drift correction are not implemented yet. No rendered-frame
+streams are not supported. Continuous correction uses small speed adjustments
+(up to ±5% of the shared rate) or a seek for drift of 800ms or more; small errors
+are ignored. Buffering players catch up locally without pausing the group.
+Inspect `[WTG sync]` debug logs for position error and correction. No rendered-frame
 accuracy guarantee is claimed; actual cross-device playback still needs testing.
 
 Run `npm test` for protocol/lifecycle checks with a mocked transport. Actual
