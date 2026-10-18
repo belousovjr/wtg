@@ -59,6 +59,20 @@ test("shadcn participant cards preserve admin-only synchronization count and mem
   assert.doesNotMatch(guest, /Синхронизированы|Удалить участника/)
 })
 
+test("popup renders English labels and a native English language name", () => {
+  const { applyLanguage } = load("lib/i18n.ts")
+  try {
+    applyLanguage("en")
+    const { default: Popup } = load("popup.tsx")
+    const html = renderToStaticMarkup(React.createElement(Popup))
+    assert.match(html, /English/)
+    assert.match(html, /Interface language/)
+    assert.match(html, /Extension diagnostics/)
+    assert.match(html, /One video\. Together\./)
+    assert.doesNotMatch(html, /Диагностика расширения/)
+  } finally { applyLanguage("ru") }
+})
+
 test("popup business components use imported UI controls rather than handmade native equivalents", () => {
   const files = ["popup.tsx", ...readdirSync(path.join(root, "components")).filter(name => name.endsWith(".tsx")).map(name => `components/${name}`)]
   for (const file of files) {
