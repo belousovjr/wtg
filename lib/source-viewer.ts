@@ -5,7 +5,7 @@ import type { VideoDescriptor } from "./video"
 import { validPlaybackRequest, validPlayerReport, type PlaybackLocal } from "./playback"
 
 type SourceState = { roomId: string | null; ready: boolean; shared: SharedState; playback?: PlaybackLocal }
-type Viewer = { frameId?: number; boundByUser: true; roomId: string; revision: number; url: string; tabId: number; closed?: boolean; override?: { descriptor: VideoDescriptor }; status?: SourceStatus }
+type Viewer = { frameId?: number; boundByUser: true; roomId: string; revision: number; url: string; tabId: number; closed?: boolean; status?: SourceStatus }
 let state: SourceState | undefined
 let viewer: Viewer | undefined
 let loaded = false
@@ -25,6 +25,7 @@ async function load() {
   const saved = (await chrome.storage.session.get("sourceViewer")).sourceViewer
   // Older automatically-created viewer tabs must not become user-approved tabs.
   viewer = saved?.boundByUser === true ? saved : undefined
+  if (viewer) delete (viewer as Viewer & { override?: unknown }).override
   loaded = true
 }
 async function persist() {
@@ -93,7 +94,7 @@ async function reconcile() {
   }
   if (tab.status === "loading") { await report("loading-page"); return }
   if (!samePageLocation(tab.url || "", url)) { await report("wrong-page"); return }
-  const descriptor = viewer?.override?.descriptor || state.shared.video
+  const descriptor = state.shared.video
   if (!descriptor) { await report("needs-video"); return }
   const frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id! }) || []
   const framePath = (frame: typeof frames[number]) => {
@@ -109,14 +110,14 @@ async function reconcile() {
   }
   let candidates = frames.filter(frame => frame.url === descriptor.frameUrl && JSON.stringify(framePath(frame)) === JSON.stringify(descriptor.framePath))
   // If session query tokens differ, still require one unambiguous frame path.
-  if (!candidates.length && !viewer.override) candidates = frames.filter(frame => {
+  if (!candidates.length) candidates = frames.filter(frame => {
     const path = framePath(frame)
     return sameFrameLocation(frame.url, descriptor.frameUrl) && path && path.length === descriptor.framePath.length && path.every((url, i) => sameFrameLocation(url, descriptor.framePath[i]))
   })
   if (candidates.length !== 1) { await report("needs-video"); return }
   try {
     const reply = await chrome.tabs.sendMessage(tab.id!, { channel: CHANNEL, to: "content", type: "source-bind", roomId: state.roomId,
-      revision, descriptor, shared: !viewer.override, position: state.shared.playback.position }, { frameId: candidates[0].frameId })
+      revision, descriptor, shared: true, position: state.shared.playback.position }, { frameId: candidates[0].frameId })
     viewer.frameId = candidates[0].frameId
     if (state.playback) await chrome.tabs.sendMessage(tab.id!, { channel: CHANNEL, to: "content", type: "playback-state", roomId: state.roomId, revision, playback: state.playback }, { frameId: viewer.frameId })
     await report(reply?.ok ? reply.data.status : "unavailable")
@@ -221,27 +222,4 @@ export function openSourceUrl() {
 }
 export function closeSource(tabId: number) {
   return serial(async () => { await load(); if (viewer?.tabId === tabId) { viewer.closed = true; await persist(); await report("unavailable") } })
-}
-export function selectLocalSource(tabId: number, frameId: number, selectedId?: string) {
-  return serial(async () => {
-    await load()
-    if (!viewer || viewer.tabId !== tabId || !state?.ready) return
-    const reply = await chrome.tabs.sendMessage(tabId, { channel: CHANNEL, to: "content", type: "video", action: { kind: "list" } }, { frameId })
-    const video = reply?.data?.videos?.find(v => v.id === (selectedId || reply.data.selectedId))
-    if (!video) return
-    const frames = await chrome.webNavigation.getAllFrames({ tabId }) || []
-    const frame = frames.find(f => f.frameId === frameId)
-    if (!frame) return
-    const framePath: string[] = []
-    let node = frame
-    while (node.parentFrameId !== -1) {
-      framePath.unshift(node.url)
-      const parent = frames.find(f => f.frameId === node.parentFrameId)
-      if (!parent) return
-      node = parent
-    }
-    viewer.override = { descriptor: { ...video.descriptor, framePath } }
-    await persist()
-    await reconcile()
-  })
 }

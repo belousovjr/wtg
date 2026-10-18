@@ -4,7 +4,7 @@ import { decodeInvitation } from "./lib/room-protocol"
 import { sourceRevision, pickedSource } from "./lib/source"
 import type { TabVideos } from "./lib/video"
 import { handleBindingMessage } from "./lib/bindings"
-import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, selectLocalSource, expectLocalSourcePick } from "./lib/source-viewer"
+import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, expectLocalSourcePick } from "./lib/source-viewer"
 
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
@@ -150,7 +150,7 @@ async function handle(message: Request) {
         if (!tab.url) throw new Error("Не удалось прочитать адрес выбранной вкладки")
         await chrome.storage.session.set({ [key]: { ...message.action.shared, url: tab.url, expires: Date.now() + 60000 } })
       }
-      else await chrome.storage.session.remove(key)
+      else throw new Error("Выбор плеера доступен только для всей группы")
     }
     return chrome.tabs.sendMessage(message.target.tabId, { channel: CHANNEL, to: "content", type: "video", action: message.action }, { frameId: message.target.frameId })
   }
@@ -172,7 +172,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const intent = (await chrome.storage.session.get(key))[key]
       await chrome.storage.session.remove(key)
       if (message.type !== "video-selected") return
-      if (!intent) { await selectLocalSource(tabId, sender.frameId!, message.selectedId); return }
+      if (!intent) throw new Error("Нет активного общего выбора. Открой расширение и выбери плеер для всех.")
       if (intent.expires < Date.now()) throw new Error("Выбор истёк. Открой расширение и попробуй снова.")
       const current = await handle({ channel: CHANNEL, to: "background", type: "room", command: { kind: "status" } })
       if (!current?.ok || !current.data.ready || !current.data.invitation || decodeInvitation(current.data.invitation).roomId !== intent.roomId || sourceRevision(current.data.shared) !== intent.revision) throw new Error("Источник комнаты изменился. Выбери плеер заново.")

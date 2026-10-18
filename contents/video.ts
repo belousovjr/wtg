@@ -237,15 +237,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       }
       if (action.kind === "cancel") stopPicking()
       if (action.kind === "clear") { stopPicking(); clearInterval(restoreTimer); setSelected(); descriptor = undefined }
-      if (action.kind === "select" || action.kind === "highlight") {
+      if (action.kind === "highlight") {
         const video = videosIn().find(item => idFor(item) === action.id)
-        if (action.kind === "select") {
-          if (!video) throw new Error("Видео исчезло. Обновите список.")
-          select(video)
-        } else {
           highlight(video)
           if (video) highlightTimeout = setTimeout(() => highlight(), 2500)
-        }
       }
       respond({ ok: true, data: snapshot() })
     } catch (error) { respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка выбора видео" }) }

@@ -126,10 +126,12 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   assert.equal(navigations.length, 0) // Already at the source: no reload.
   await viewer.refreshSource(1)
   assert.equal(reports.at(-1).status, "needs-video")
-  await viewer.selectLocalSource(1, 0)
+  assert.equal(viewer.selectLocalSource, undefined)
+  missing = false
+  await viewer.refreshSource(1)
   assert.equal(reports.at(-1).status, "ready")
-  assert.equal(bound.at(-1).descriptor.selector, "#local-player")
-  assert.equal(bound.at(-1).shared, false)
+  assert.equal(bound.at(-1).descriptor.selector, "#video")
+  assert.equal(bound.at(-1).shared, true)
   tabs.get(1).url = "https://example.com/elsewhere"
   await viewer.openSourceUrl()
   assert.equal(tabs.get(1).url, shared.url)

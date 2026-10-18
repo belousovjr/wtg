@@ -1,12 +1,34 @@
 import { useEffect, useState } from "react"
 import { CHANNEL, sendRequest } from "../lib/messages"
-import type { TabVideos } from "../lib/video"
+import type { TabVideos, VideoInfo } from "../lib/video"
 import { decodeInvitation, type RoomView } from "../lib/room-protocol"
 import { sameVideoSelection, sourceRevision } from "../lib/source"
 import { Button } from "./ui/button"
 import { Alert, AlertDescription } from "./ui/alert"
+import { Card, CardContent } from "./ui/card"
+import { Badge } from "./ui/badge"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "./ui/accordion"
-import { MousePointer2, Share2 } from "lucide-react"
+import { MousePointer2, Share2, MonitorPlay, Check, Link2, Pause, Play } from "lucide-react"
+
+export function SelectedVideoPreview({ video, bound, duration }: { video?: VideoInfo; bound: boolean; duration: number | null }) {
+  const [posterFailed, setPosterFailed] = useState(false)
+  useEffect(() => setPosterFailed(false), [video?.poster])
+  const time = duration === null ? null : `${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, "0")}`
+  return <Card size="sm" className="gap-0 overflow-hidden py-0" aria-label="Выбранное видео">
+    <div className="relative flex h-28 items-center justify-center overflow-hidden bg-secondary">
+      {video?.poster && !posterFailed ? <img src={video.poster} alt="Превью выбранного видео" referrerPolicy="no-referrer" onError={() => setPosterFailed(true)} className="absolute inset-0 size-full object-cover" /> : <MonitorPlay className="size-10 text-primary/60" aria-hidden="true" />}
+      <Badge className="absolute left-2 top-2 gap-1" variant="secondary"><Check className="size-3" />Выбрано для группы</Badge>
+      {time && <Badge className="absolute bottom-2 right-2 bg-background/90 text-foreground" variant="secondary">{time}</Badge>}
+    </div>
+    <CardContent className="space-y-2 py-3">
+      <p className="text-sm font-medium">{video?.label || "Общий плеер"}</p>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge variant="outline">{bound ? <Link2 className="size-3" /> : <MousePointer2 className="size-3" />}{bound ? "Привязан у тебя" : "Нужно выбрать плеер у тебя"}</Badge>
+        {bound && video && <span className="flex items-center gap-1 text-muted-foreground">{video.readyState < 2 ? "Загружается" : video.paused ? <><Pause className="size-3" />Пауза</> : <><Play className="size-3" />Играет</>}</span>}
+      </div>
+    </CardContent>
+  </Card>
+}
 
 export function VideoPicker({ room }: { room: RoomView }) {
   const [data, setData] = useState<TabVideos>()
@@ -26,7 +48,7 @@ export function VideoPicker({ room }: { room: RoomView }) {
     const timer = setInterval(() => void refresh(), 2000)
     return () => { active = false; clearInterval(timer) }
   }, [])
-  async function pick(shared: boolean) {
+  async function pick() {
     setBusy(true)
     setError("")
     try {
@@ -36,7 +58,7 @@ export function VideoPicker({ room }: { room: RoomView }) {
       if (!current.ready || !current.invitation) throw new Error("Сначала подключись к комнате")
       const videos = await sendRequest<TabVideos>({ channel: CHANNEL, to: "background", type: "tab-videos", tabId: tab.id })
       if (!videos.frames.length) throw new Error("Страница недоступна. Обнови её и попробуй снова.")
-      const context = shared ? { roomId: decodeInvitation(current.invitation).roomId, revision: sourceRevision(current.shared) } : undefined
+      const context = { roomId: decodeInvitation(current.invitation).roomId, revision: sourceRevision(current.shared) }
       await Promise.all(videos.frames.map(frame => sendRequest({ channel: CHANNEL, to: "background", type: "video", target: { tabId: tab.id!, frameId: frame.frameId }, action: { kind: "pick", shared: context } })))
       window.close()
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Не удалось включить выбор") }
@@ -51,15 +73,10 @@ export function VideoPicker({ room }: { room: RoomView }) {
   const current = bound || data?.frames.flatMap(frame => frame.snapshot.videos).find(video => sameVideoSelection(video.descriptor, room.shared.video))
   return <section className="space-y-3">
     <div className="flex flex-wrap gap-2">
-      <Button size="sm" title="Выбрать плеер и страницу для всей группы" disabled={busy || !room.ready} onClick={() => void pick(true)}><Share2 />{room.shared.video ? "Сменить для всех" : "Выбрать для всех"}</Button>
-      {room.shared.video && !bound && <Button variant="outline" size="sm" title="Привязать плеер только у тебя" disabled={busy || !room.ready} onClick={() => void pick(false)}><MousePointer2 />Выбрать для меня</Button>}
+      <Button size="sm" title="Выбрать плеер и страницу для всей группы" disabled={busy || !room.ready} onClick={() => void pick()}><Share2 />{room.shared.video ? "Сменить для всех" : "Выбрать для всех"}</Button>
     </div>
     <p className="text-xs text-muted-foreground">Затем кликни плеер на странице. Esc — отмена.</p>
-    {room.shared.video ? <div className="space-y-1 text-xs">
-      <p className="font-medium">{current?.label || "Общий плеер"}</p>
-      <p className="text-muted-foreground">{bound ? "Привязан у тебя" : "Нужно выбрать плеер у тебя"}</p>
-      {current && <p className="text-muted-foreground">{current.width}×{current.height} · {current.duration === null ? "Длительность неизвестна" : `${Math.floor(current.duration / 60)}:${String(Math.floor(current.duration % 60)).padStart(2, "0")}`} · {current.readyState < 2 ? "Загружается" : current.paused ? "Пауза" : "Играет"}</p>}
-    </div> : <p className="text-xs text-muted-foreground">Общий плеер ещё не выбран.</p>}
+    {room.shared.video ? <SelectedVideoPreview video={current} bound={!!bound} duration={current?.duration ?? room.shared.video.duration ?? null} /> : <p className="text-xs text-muted-foreground">Общий плеер ещё не выбран.</p>}
     <Accordion type="single" collapsible><AccordionItem value="player" className="border-0"><AccordionTrigger className="text-xs text-muted-foreground">Диагностика плеера</AccordionTrigger><AccordionContent className="space-y-2 text-xs text-muted-foreground">
       {room.shared.video && <div className="space-y-2 break-all">
         <p>Общий CSS-селектор · ревизия {sourceRevision(room.shared)}: <code>{room.shared.video.selector}</code></p>

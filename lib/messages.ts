@@ -27,12 +27,11 @@ export function isRequest(value: unknown): value is Request {
   if (m.type === "video") {
     if (!m.action || typeof m.action !== "object") return false
     const action = m.action as Record<string, unknown>
-    if (!["list", "pick", "cancel", "clear", "select", "highlight"].includes(String(action.kind))) return false
-    if (action.kind === "pick" && action.shared !== undefined) {
+    if (!["list", "pick", "cancel", "clear", "highlight"].includes(String(action.kind))) return false
+    if (action.kind === "pick") {
       const shared = action.shared as Record<string, unknown> | null
       if (!shared || typeof shared !== "object" || typeof shared.roomId !== "string" || shared.roomId.length > 128 || !Number.isSafeInteger(shared.revision) || Number(shared.revision) < 0) return false
     }
-    if (action.kind === "select" && typeof action.id !== "string") return false
     if (action.kind === "highlight" && action.id !== null && typeof action.id !== "string") return false
     if (m.to === "content") return true
     if (m.to !== "background" || !m.target || typeof m.target !== "object") return false
