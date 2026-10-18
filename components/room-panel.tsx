@@ -72,8 +72,7 @@ export function RoomPanel() {
         <div className="space-y-2"><Label htmlFor="nickname">Твоё прозвище</Label><Input id="nickname" autoComplete="nickname" maxLength={32} value={nickname} onChange={e => { nicknameEdited.current = true; setNickname(e.target.value) }} placeholder="Как тебя называть?" /></div>
         <div className="space-y-2"><Label htmlFor="invitation">Приглашение</Label><Textarea id="invitation" value={invitation} onChange={e => setInvitation(e.target.value)} placeholder="wtg2.…" className="min-h-20 resize-none text-xs" /></div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={busy || !validNickname(nickname.trim())} onClick={create}><Plus />Создать</Button>
-          <Button variant="outline" size="sm" disabled={busy || !invitation.trim() || !validNickname(nickname.trim())} onClick={() => void perform({ kind: "join", invitation, nickname: nickname.trim() })}><LogIn />Войти</Button>
+          <Button size="sm" disabled={busy || !validNickname(nickname.trim())} onClick={() => invitation.trim() ? void perform({ kind: "join", invitation: invitation.trim(), nickname: nickname.trim() }) : void create()}>{invitation.trim() ? <LogIn /> : <Plus />}{invitation.trim() ? "Войти" : "Создать"}</Button>
         </div>
       </CardContent></Card>
     </> : room && room.status !== "idle" && <>
@@ -95,7 +94,7 @@ export function RoomPanel() {
       </>}
       <div className="flex flex-wrap gap-2">
       {room.ready && <Button size="sm" onClick={copy}>{copied ? <Check /> : <Copy />}{copied ? "Скопировано" : "Пригласить"}</Button>}
-      <Button variant="outline" size="icon-sm" title="Выйти из комнаты" aria-label="Выйти из комнаты" disabled={busy} onClick={() => void perform({ kind: "leave" })}><LogOut /></Button>
+      {!room.isAdmin && <Button variant="outline" size="icon-sm" title="Выйти из комнаты" aria-label="Выйти из комнаты" disabled={busy} onClick={() => void perform({ kind: "leave" })}><LogOut /></Button>}
       {room.isAdmin && <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive" size="icon-sm" title="Завершить комнату для всех" aria-label="Завершить комнату для всех" disabled={busy}><Power /></Button></AlertDialogTrigger>
         <AlertDialogContent className="max-w-[360px]"><AlertDialogHeader><AlertDialogTitle>Завершить комнату?</AlertDialogTitle><AlertDialogDescription>Совместный просмотр закончится для всех участников. Это действие нельзя отменить.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Отмена</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void perform({ kind: "end" })}>Завершить</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
       </AlertDialog>}

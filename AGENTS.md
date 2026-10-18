@@ -6,6 +6,8 @@
 
 ## Product
 
+- Popup offers “Выйти” only to guests. The creator instead has “Завершить комнату для всех” with explicit confirmation; do not offer the creator a leave action that clears their active session without terminating the room. Browser restarts still recover the saved creator session.
+
 - Participants choose a public nickname (1–32 trimmed characters, no control/bidi override characters) when creating/joining. The successful entry saves nickname in the version-1 local vault; popup status supplies it for prefill without overwriting an edited field. Nicknames are display-only and need not be unique: cryptographic keys/Peer IDs remain the sole admission/removal/control identity. React renders names as text.
 - Authenticated proof/hello packets carry the sender's nickname; the coordinator distributes a bounded per-current-roster participantNames map in authenticated snapshots. Pending admission names are visible to the creator. Recovery resends the locally saved nickname under the new transport ID. Older peers/vaults may omit names and display a neutral fallback; nickname is an additive optional vault/protocol field, not a schema/version reset.
 
