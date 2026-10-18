@@ -37,15 +37,17 @@ export class PlayerIndicator {
       this.adminNode = document.createElement("div")
       this.adminNode.setAttribute("role", "status")
       this.adminNode.setAttribute("aria-live", "polite")
-      this.adminNode.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:none;padding:7px 10px;border-radius:8px;background:rgba(15,23,42,.94);color:#fde68a;font:600 12px/1.4 system-ui;box-sizing:border-box;max-width:280px"
+      this.adminNode.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:none;height:28px;padding:0 9px;border-radius:7px;background:rgba(20,24,30,.72);color:rgba(255,255,255,.82);font:500 11px/28px system-ui;font-variant-numeric:tabular-nums;box-sizing:border-box;backdrop-filter:blur(6px)"
     }
     const host = document.fullscreenElement && !(document.fullscreenElement instanceof HTMLVideoElement) ? document.fullscreenElement : document.documentElement
     if (this.adminNode.parentElement !== host) host.append(this.adminNode)
     const rect = video.getBoundingClientRect()
-    this.adminNode.style.left = `${Math.max(4, Math.min(rect.right - 292, window.innerWidth - 292))}px`
-    this.adminNode.style.top = `${Math.max(4, rect.top + 62)}px`
+    this.adminNode.style.right = `${Math.max(10, window.innerWidth - rect.right + 44)}px`
+    this.adminNode.style.top = `${Math.max(10, rect.top + 10)}px`
     this.adminNode.style.display = rect.width && rect.height ? "block" : "none"
-    const label = `Синхронизированы ${summary.synchronized} / ${summary.total} участников`
+    const label = `${summary.synchronized}/${summary.total}`
+    this.adminNode.title = `Синхронизированы ${summary.synchronized} из ${summary.total}`
+    this.adminNode.setAttribute("aria-label", this.adminNode.title)
     if (this.adminNode.textContent !== label) this.adminNode.textContent = label
   }
   begin(commandId?: string) {
@@ -78,13 +80,13 @@ export class PlayerIndicator {
       this.node = document.createElement("div")
       this.node.setAttribute("role", "status")
       this.node.setAttribute("aria-live", "polite")
-      this.node.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:none;max-width:280px;padding:9px 12px;border-radius:9px;background:rgba(15,23,42,.94);color:white;font:600 13px/1.4 system-ui;box-shadow:0 2px 12px #0006;box-sizing:border-box"
+      this.node.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:none;max-width:240px;background-color:rgba(20,24,30,.72);color:rgba(255,255,255,.85);font:500 11px/1.4 system-ui;box-sizing:border-box;backdrop-filter:blur(6px);background-repeat:no-repeat;background-position:center;background-size:14px"
     }
     const host = document.fullscreenElement && !(document.fullscreenElement instanceof HTMLVideoElement) ? document.fullscreenElement : document.documentElement
     if (this.node.parentElement !== host) host.append(this.node)
     const rect = video.getBoundingClientRect()
-    this.node.style.left = `${Math.max(4, Math.min(rect.right - 292, window.innerWidth - 292))}px`
-    this.node.style.top = `${Math.max(4, rect.top + 12)}px`
+    this.node.style.right = `${Math.max(10, window.innerWidth - rect.right + 10)}px`
+    this.node.style.top = `${Math.max(10, rect.top + 10)}px`
     this.node.style.display = rect.width && rect.height ? "block" : "none"
     const text = ready ? "✓ Группа готова" : state.urgent ? state.text :
       pending || awaitingAction ? "◌ Ждём подтверждения команды…" :
@@ -99,20 +101,24 @@ export class PlayerIndicator {
       this.lastDiagnostic = diagnostic
       console.info("[WTG indicator]", diagnostic)
     }
-    if (this.node.textContent !== label) this.node.textContent = label
+    const visibleText = actionable ? text.replace("▶ ", "").replace(" на плеере", "") : ""
+    if (this.node.textContent !== visibleText) this.node.textContent = visibleText
+    const icon = ready ? '<path d="m5 12 4 4L19 6"/>' : '<path d="M20 12a8 8 0 1 1-8-8"/>'
+    this.node.style.backgroundImage = actionable ? "none" : `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${ready ? "#a7d8bd" : "#d1d5db"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`)}")`
+    if (this.adminNode) this.adminNode.style.top = `${Math.max(10, rect.top + (actionable ? 46 : 10))}px`
     this.node.setAttribute("aria-label", ready ? "Группа готова" : text)
     this.node.title = ready ? "Готово" : actionable ? text : "Синхронизация"
-    this.node.style.borderRadius = actionable ? "9px" : "50%"
-    this.node.style.padding = actionable ? "9px 12px" : "8px"
-    this.node.style.width = actionable ? "auto" : "36px"
-    this.node.style.height = actionable ? "auto" : "36px"
+    this.node.style.borderRadius = actionable ? "7px" : "50%"
+    this.node.style.padding = actionable ? "6px 9px" : "0"
+    this.node.style.width = actionable ? "auto" : "28px"
+    this.node.style.height = actionable ? "auto" : "28px"
     this.node.style.textAlign = "center"
-    this.node.style.fontSize = actionable ? "13px" : "20px"
-    this.node.style.lineHeight = actionable ? "1.4" : "20px"
+    this.node.style.fontSize = "11px"
+    this.node.style.lineHeight = actionable ? "1.4" : "28px"
     if (!ready && !actionable) {
       if (!this.spinner && this.node.animate && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)
         this.spinner = this.node.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 1000, iterations: Infinity })
     } else { this.spinner?.cancel(); this.spinner = undefined }
-    this.node.style.color = ready ? "#86efac" : "#fde68a"
+    this.node.style.color = "rgba(255,255,255,.85)"
   }
 }

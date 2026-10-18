@@ -6,7 +6,7 @@ export function GroupPlayerStatus({ room, remove, busy }: { room: RoomView; remo
   return <section aria-label="Привязка плееров группы" style={{ padding: 12, margin: "12px 0", borderRadius: 8,
     border: `2px solid ${group.allReady ? "#15803d" : "#a16207"}`, background: group.allReady ? "#f0fdf4" : "#fffbeb", color: "#111827" }}>
     <strong role="status">{!room.ready ? "Нет связи с координатором" : !room.shared.video ? "Видео для группы ещё не выбрано" : group.allReady ? `✓ Плееры привязаны у всех (${group.total} из ${group.total})` : `Плеер привязан у ${group.bound} из ${group.total} участников`}</strong>
-    {room.isAdmin && room.shared.video && group.synchronized < group.total && <p role="status">Синхронизированы {group.synchronized} / {group.total} участников</p>}
+    {room.isAdmin && room.shared.video && group.synchronized < group.total && <p role="status" aria-label={`Синхронизированы ${group.synchronized} из ${group.total}`} style={{ fontSize: 12, margin: "6px 0", color: "#64748b", fontVariantNumeric: "tabular-nums" }}>{group.synchronized}/{group.total}</p>}
     <ul style={{ paddingLeft: 20, marginBottom: 0 }}>{group.members.map(member => <li key={member.id}>
       <strong>{member.id === room.selfId ? "Ты" : `Участник ${member.id.slice(0, 6)}`}{member.id === room.adminId ? " · админ" : ""}</strong>: {member.text}
       {room.isAdmin && member.id !== room.selfId && remove && <button disabled={busy} onClick={() => remove(member.id)}>Удалить участника</button>}

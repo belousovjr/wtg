@@ -53,30 +53,33 @@ test("player marker stays visible through loading and acknowledgement, then dism
   clock.time += 5000
   marker.update(video, state, 0, false)
   assert.equal(node.removed, undefined) // Old all-ready is not the user's acknowledgement.
-  assert.equal(node.textContent, "◌")
+  assert.equal(node.textContent, "")
+  assert.match(node.style.backgroundImage, /svg/)
+  assert.equal(node.style.right, "210px")
   state.command = { sequence: 2, commandId: "new", executeAt: 0 }
   state.players.a.sequence = 2
   video.readyState = 1
   marker.update(video, state, 0, false)
-  assert.equal(node.textContent, "◌")
+  assert.equal(node.textContent, "")
   video.paused = true
   marker.update(video, state, 0, false)
-  assert.equal(node.textContent, "◌")
+  assert.equal(node.textContent, "")
   assert.doesNotMatch(node.textContent, /Буферизация/)
   marker.update(video, state, 0, false, false, true)
-  assert.equal(node.textContent, "◌")
+  assert.equal(node.textContent, "")
   video.paused = false
   marker.update(video, state, 0, true, true)
   assert.match(node.textContent, /Нажми Play/)
   assert.doesNotMatch(node.textContent, /Буферизация/)
   video.readyState = 4
   marker.update(video, state, 0, false)
-  assert.equal(node.textContent, "✓")
+  assert.equal(node.textContent, "")
+  assert.equal(node.title, "Готово")
   clock.time += 1201; marker.update(video, state, 0, false)
   assert.equal(node.removed, true)
   marker.update(video, { ...state, adminSync: { synchronized: 1, total: 2 } }, 0, false)
-  const adminNode = nodes.find(item => item.textContent?.includes("Синхронизированы 1 / 2"))
-  assert.match(adminNode.textContent, /Синхронизированы 1 \/ 2/)
+  const adminNode = nodes.find(item => item.textContent === "1/2")
+  assert.equal(adminNode.textContent, "1/2")
   marker.update(video, { ...state, adminSync: { synchronized: 2, total: 2 } }, 0, false)
   assert.equal(adminNode.removed, true)
   const count = nodes.length
