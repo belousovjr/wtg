@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 import { driftCorrection, now, positionAt, validCommit, validPreparation, type PlaybackLocal, type PlaybackRequest, type PlayerReport } from "./playback"
 import { PlayerIndicator } from "./player-indicator"
 
@@ -21,7 +22,7 @@ export class PlayerSync {
       this.autoplayBlocked = false
     }, error => {
       if (!valid()) return
-      if (error?.name === "NotAllowedError") { this.showUnlock(); this.report("blocked", "Нажми Play на плеере") }
+      if (error?.name === "NotAllowedError") { this.showUnlock(); this.report("blocked", t("playerSync.pressPlay")) }
     }).finally(() => {
       if (this.probe === probe) this.probe = undefined
       this.renderIndicator()
@@ -68,7 +69,7 @@ export class PlayerSync {
     for (const name of ["play", "pause", "seeking", "seeked", "ratechange", "canplay", "loadedmetadata"]) video?.addEventListener(name, this.onEvent)
     console.info("[WTG seek] Обработчики плеера", { attached: !!video, connected: !!video?.isConnected, activeContext: !!this.context })
     this.lastReport = ""
-    if (!video) this.report("missing", "Плеер не найден")
+    if (!video) this.report("missing", t("playerSync.missing"))
   }
   update(roomId: string, revision: number, playback: PlaybackLocal | null) {
     const trace = JSON.stringify([revision, playback?.epoch, playback?.command?.sequence, playback?.command?.paused, playback?.preparation?.id, this.pendingSeekId, this.userSeeking])
@@ -121,7 +122,7 @@ export class PlayerSync {
       return
     }
     const video = this.video
-    if (!video?.isConnected) { this.report("missing", "Плеер не найден"); return }
+    if (!video?.isConnected) { this.report("missing", t("playerSync.missing")); return }
     const prep = playback.preparation
     if (prep && prep.revision === revision) {
       clearTimeout(this.timer); this.scheduled = ""
@@ -137,7 +138,7 @@ export class PlayerSync {
     if (this.playPending || this.autoplayBlocked && !command.paused) return
     const id = `${command.epoch}:${command.sequence}`
     if (this.applied === id || this.scheduled === id) return
-    if (!playback.clock) { this.report("loading", "Согласуем часы"); return }
+    if (!playback.clock) { this.report("loading", t("playerSync.clock")); return }
     this.scheduled = id
     clearTimeout(this.timer)
     const execute = () => {
@@ -166,14 +167,14 @@ export class PlayerSync {
         if (this.context?.playback.command?.sequence === command.sequence && this.context.playback.epoch === command.epoch) this.playPending = false
         console.info("[WTG playback] play() выполнен", { sequence: command.sequence, paused: video.paused, position: video.currentTime })
         if (this.context?.playback.command?.sequence === command.sequence && this.context.playback.epoch === command.epoch && !this.context.playback.preparation) {
-          this.report(aligned ? "ready" : "loading", aligned ? undefined : "Ждём metadata и позицию просмотра", late)
+          this.report(aligned ? "ready" : "loading", aligned ? undefined : t("playerSync.waitingPosition"), late)
           this.renderIndicator()
         }
       }, error => {
         if (this.context?.playback.command?.sequence === command.sequence && this.context.playback.epoch === command.epoch) this.playPending = false
         console.warn("[WTG playback] play() отклонён", { sequence: command.sequence, name: error?.name })
         if (this.context?.playback.command?.sequence !== command.sequence || this.context.playback.epoch !== command.epoch || this.context.playback.preparation) return
-        this.report(error?.name === "NotAllowedError" ? "blocked" : "error", error?.name === "NotAllowedError" ? "Нажми Play на плеере" : "Браузер не смог запустить видео")
+        this.report(error?.name === "NotAllowedError" ? "blocked" : "error", error?.name === "NotAllowedError" ? t("playerSync.pressPlay") : t("playerSync.startFailed"))
         if (error?.name === "NotAllowedError") this.showUnlock()
         this.renderIndicator()
       })
@@ -187,7 +188,7 @@ export class PlayerSync {
       command.revision !== c.revision || this.pendingManual || this.pendingSeekId || this.userSeeking || video.seeking ||
       this.applied !== `${command.epoch}:${command.sequence}` || now() < this.correctionUntil) return
     if (this.autoplayBlocked && !command.paused) return
-    if (video.readyState < 2) { this.report("loading", "Буферизация · догоним после загрузки"); return }
+    if (video.readyState < 2) { this.report("loading", t("playerSync.buffering")); return }
     if (!Number.isFinite(video.duration) || video.duration <= 0) return
     const target = Math.min(positionAt(command, now() + c.playback.clock.offset), Math.max(0, video.duration - 0.05))
     const error = target - video.currentTime
@@ -206,22 +207,22 @@ export class PlayerSync {
     }
     console.debug("[WTG sync] Коррекция таймлайна", { driftMs: Math.round(error * 1000), rate: video.playbackRate, seek: correction.seek })
     const converging = Math.abs(error) > Math.max(0.12, Math.min(0.3, c.playback.clock.uncertainty / 1000))
-    this.report(converging ? "loading" : "ready", converging ? "Выравниваем позицию просмотра" : undefined)
+    this.report(converging ? "loading" : "ready", converging ? t("playerSync.correcting") : undefined)
   }
   private seek(position: number, rate: number) {
     const video = this.video!
-    if (video.readyState < 1) { this.report("loading", "Ждём metadata видео"); return false }
-    if (!Number.isFinite(video.duration)) { this.report("error", "Трансляции пока не поддерживаются"); return false }
+    if (video.readyState < 1) { this.report("loading", t("playerSync.metadata")); return false }
+    if (!Number.isFinite(video.duration)) { this.report("error", t("playerSync.liveUnsupported")); return false }
     const target = Math.min(position, Math.max(0, video.duration - 0.05))
     let available = target < 0.1
     for (let i = 0; i < video.seekable.length; i++) if (target >= video.seekable.start(i) && target <= video.seekable.end(i)) available = true
-    if (!available) { this.report("loading", "Ожидаем доступность позиции"); return false }
+    if (!available) { this.report("loading", t("playerSync.positionUnavailable")); return false }
     try {
       this.expectedPosition = target; this.expectedRate = rate
       video.playbackRate = rate
       if (Math.abs(video.currentTime - target) > 0.04) { this.remoteSeekPending = true; video.currentTime = target }
       return true
-    } catch { this.report("error", "Плеер не разрешает перемотку"); return false }
+    } catch { this.report("error", t("playerSync.seekDenied")); return false }
   }
   private report(status: PlayerReport["status"], detail?: string, lateness?: number) {
     const context = this.context
@@ -258,7 +259,7 @@ export class PlayerSync {
       this.expectedPaused = false
       this.applied = ""
       this.indicator.begin(c.playback.command?.commandId)
-      this.report("loading", "Подключаемся к общему просмотру")
+      this.report("loading", t("playerSync.reconnecting"))
       this.renderIndicator()
       this.update(c.roomId, c.revision, c.playback)
       return

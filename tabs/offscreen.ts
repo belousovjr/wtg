@@ -1,4 +1,6 @@
 import { isRequest, type Reply, type RuntimeStatus } from "../lib/messages"
+import { startLocaleClient } from "../lib/locale-sync"
+startLocaleClient()
 import { initializeRoom, observeSource, roomCommand } from "../lib/room"
 import { CHANNEL } from "../lib/messages"
 import { groupPlayerStatus } from "../lib/group-status"

@@ -6,6 +6,8 @@
 
 ## Product
 
+- Header language control uses the CLI-installed shadcn Select instead of a P2P badge. Only ru is currently available. Language names are hardcoded autonyms in nativeLanguageNames (e.g. “Русский”), never translated; the control's accessible label still comes from the locale dictionary.
+
 - Removed-member display names are archived locally at removal under room ID and persistent public key (bounded optional removedNames vault field). Creator-only blockedNames maps restore labels after disconnection/restart; never display raw key fragments as names. Legacy removals without saved names use a neutral fallback. Names never affect signed membership policies or identity checks.
 
 - Popup offers “Выйти” only to guests. The creator instead has “Завершить комнату для всех” with explicit confirmation; do not offer the creator a leave action that clears their active session without terminating the room. Browser restarts still recover the saved creator session.
@@ -31,6 +33,8 @@
 - The creator coordinates command ordering and shared time without extra playback privileges. Prioritize synchronized playback; do not promise nanosecond precision in browsers.
 
 ## Architecture
+
+- User-facing text lives in lib/locales/ru.ts (semantic flat keys) and is read through the typed t() helper in lib/i18n.ts. i18next 26.5.2 initializes synchronously with bundled Russian resources in each extension context; no React provider, DOM, network backend, eval or language switcher is required. Russian remains the only shipped language. Keep full sentences in resources, interpolate named variables, and use count with _one/_few/_many/_other entries for plurals. Keys and required template parameters are typechecked. Render translations as React text/textContent, never HTML; escapeValue:false relies on those safe sinks. Technical console traces, protocol identifiers and user/site-provided titles/names are not translated. test/i18n.test.cjs audits missing keys and untranslated Russian UI literals; test/i18n-types.ts guards compile-time contracts. Errors currently travel as rendered Russian strings; future mixed-language rooms need structured error codes rather than assuming receiver-side localization.
 
 - The managed top frame displays a page-level “Запусти плеер на странице” startup notice while source-refresh reports startupPrompt (ready room, shared video and needs-video). It does not require a bound HTML video, popup or manual picking. The pointer-transparent dark/rose notice sits bottom-right and disappears on the next successful refresh after binding/leaving/wrong-page. This is an initialization suggestion, not proof of autoplay denial; the bound-player NotAllowedError prompt remains separate.
 

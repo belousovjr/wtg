@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 import type { SharedState } from "./room-protocol"
 import type { VideoDescriptor } from "./video"
 
@@ -13,7 +14,7 @@ export function webUrl(value: string): string | null {
 export const sourceRevision = (shared: SharedState) => shared.sourceRevision || 0
 export function pickedSource(tabUrl: string, video: VideoDescriptor) {
   const url = webUrl(tabUrl)
-  if (!url) throw new Error("Не удалось прочитать URL выбранной вкладки. Выбери плеер заново.")
+  if (!url) throw new Error(t("source.urlMissing"))
   return { url, video: { ...video, pageUrl: url } }
 }
 export function samePageLocation(a: string, b: string) {
@@ -39,8 +40,8 @@ export function validReadiness(value: unknown): value is SourceReadiness {
   return Number.isSafeInteger(r.revision) && r.revision >= 0 && ["loading-page", "needs-video", "loading-video", "ready", "unavailable", "wrong-page"].includes(r.status)
 }
 export function commitSource(shared: SharedState, command: SourceCommand): SharedState {
-  if (command.expectedRevision !== sourceRevision(shared)) throw new Error("Источник уже изменился. Обнови выбор и попробуй снова.")
+  if (command.expectedRevision !== sourceRevision(shared)) throw new Error(t("source.sourceChanged"))
   const url = webUrl(command.url)
-  if (!url || command.video && webUrl(command.video.pageUrl) !== url) throw new Error("Неподдерживаемый URL источника")
+  if (!url || command.video && webUrl(command.video.pageUrl) !== url) throw new Error(t("source.unsupportedUrl"))
   return { url, video: command.video, sourceRevision: sourceRevision(shared) + 1, playback: { position: 0, paused: true, rate: 1 } }
 }

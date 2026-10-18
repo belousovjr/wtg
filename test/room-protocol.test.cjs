@@ -14,8 +14,10 @@ const protocol = new Module(filename, module)
 protocol.filename = filename
 protocol.paths = module.paths
 protocol.require = id => {
+  if (id === "./i18n") return require("./load-i18n.cjs")
   if (!["./source", "./playback"].includes(id)) return require(id)
   const source = new Module(filename, module)
+  source.require = protocol.require
   source._compile(ts.transpileModule(readFileSync(path.resolve(__dirname, `../lib/${id.slice(2)}.ts`), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
   }).outputText, filename)

@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 import type { VideoAction } from "./video"
 import { validRoomCommand, type RoomCommand } from "./room-protocol"
 export const CHANNEL = "wtg:local:v1"
@@ -48,7 +49,7 @@ export function isRequest(value: unknown): value is Request {
 
 export async function sendRequest<T>(request: Request): Promise<T> {
   const reply: Reply<T> | undefined = await chrome.runtime.sendMessage(request)
-  if (!reply) throw new Error("Контекст расширения не ответил")
+  if (!reply) throw new Error(t("messages.noResponse"))
   if (reply.ok === false) throw new Error(reply.error)
   return reply.data
 }

@@ -1,22 +1,23 @@
+import { t } from "./i18n"
 import { now, type PlaybackLocal } from "./playback"
 
 export function indicatorState(playback: PlaybackLocal, revision: number, locallyBlocked = false) {
-  if (locallyBlocked) return { ready: false, urgent: true, text: "▶ Нажми Play на плеере" }
+  if (locallyBlocked) return { ready: false, urgent: true, text: t("playerIndicator.pressPlay") }
   const ids = playback.participantIds || []
   const command = playback.command
   const reports = ids.map(id => ({ id, report: playback.players[id] })).filter(({ report }) => report?.epoch === playback.epoch && report.revision === revision &&
     (playback.preparation ? report.preparationId === playback.preparation.id : !!command && report.sequence === command.sequence))
   const blocked = reports.filter(({ id, report }) => id !== playback.selfId && report.status === "blocked").length
-  if (blocked) return { ready: false, text: `Ждём ручного запуска у участников: ${blocked}` }
-  if (reports.some(({ report }) => report.status === "error" || report.status === "missing")) return { ready: false, text: "У участника проблема с плеером" }
-  if (!playback.clock) return { ready: false, text: "◌ Согласуем часы…" }
-  if (playback.preparation) return { ready: false, text: "◌ Подготавливаем плееры…" }
-  if (!command) return { ready: false, text: "Ожидание команды просмотра" }
-  if (now() + playback.clock.offset < command.executeAt) return { ready: false, text: "◌ Ждём общего старта…" }
+  if (blocked) return { ready: false, text: t("playerIndicator.blockedCount", { count: blocked }) }
+  if (reports.some(({ report }) => report.status === "error" || report.status === "missing")) return { ready: false, text: t("playerIndicator.playerProblem") }
+  if (!playback.clock) return { ready: false, text: t("playerIndicator.clock") }
+  if (playback.preparation) return { ready: false, text: t("playerIndicator.preparing") }
+  if (!command) return { ready: false, text: t("playerIndicator.waitingCommand") }
+  if (now() + playback.clock.offset < command.executeAt) return { ready: false, text: t("playerIndicator.waitingStart") }
   const ready = reports.filter(({ report }) => report.status === "ready").length
   return ids.length > 0 && ready === ids.length
-    ? { ready: true, text: "✓ Группа готова" }
-    : { ready: false, text: `Ждём синхронизации участников · готовы ${ready}/${ids.length || "?"}` }
+    ? { ready: true, text: t("playerIndicator.ready") }
+    : { ready: false, text: t("playerIndicator.waitingParticipants", { ready: ready, total: ids.length || "?" }) }
 }
 
 export class PlayerIndicator {
@@ -46,7 +47,7 @@ export class PlayerIndicator {
     this.adminNode.style.top = `${Math.max(10, rect.top + 10)}px`
     this.adminNode.style.display = rect.width && rect.height ? "block" : "none"
     const label = `${summary.synchronized}/${summary.total}`
-    this.adminNode.title = `Синхронизированы ${summary.synchronized} из ${summary.total}`
+    this.adminNode.title = t("playerIndicator.synchronizationCount", { ready: summary.synchronized, total: summary.total })
     this.adminNode.setAttribute("aria-label", this.adminNode.title)
     if (this.adminNode.textContent !== label) this.adminNode.textContent = label
   }
@@ -88,9 +89,9 @@ export class PlayerIndicator {
     this.node.style.right = `${Math.max(10, window.innerWidth - rect.right + 10)}px`
     this.node.style.top = `${Math.max(10, rect.top + 10)}px`
     this.node.style.display = rect.width && rect.height ? "block" : "none"
-    const text = ready ? "✓ Группа готова" : state.urgent ? state.text :
-      pending || awaitingAction ? "◌ Ждём подтверждения команды…" :
-      starting ? "◌ Запускаем воспроизведение…" : video.seeking ? "◌ Загружаем выбранную позицию…" : state.text
+    const text = ready ? t("playerIndicator.ready") : state.urgent ? state.text :
+      pending || awaitingAction ? t("playerIndicator.awaitingCommand") :
+      starting ? t("playerIndicator.starting") : video.seeking ? t("playerIndicator.seeking") : state.text
     const actionable = !ready && !!state.urgent
     const label = ready ? "✓" : actionable ? text : "◌"
     const diagnostic = JSON.stringify({ label, paused: video.paused, seeking: video.seeking, readyState: video.readyState,
@@ -101,13 +102,13 @@ export class PlayerIndicator {
       this.lastDiagnostic = diagnostic
       console.info("[WTG indicator]", diagnostic)
     }
-    const visibleText = actionable ? text.replace("▶ ", "").replace(" на плеере", "") : ""
+    const visibleText = actionable ? t("video.pressPlay") : ""
     if (this.node.textContent !== visibleText) this.node.textContent = visibleText
     const icon = ready ? '<path d="m5 12 4 4L19 6"/>' : '<path d="M20 12a8 8 0 1 1-8-8"/>'
     this.node.style.backgroundImage = actionable ? "none" : `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ea4c89" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`)}")`
     if (this.adminNode) this.adminNode.style.top = `${Math.max(10, rect.top + (actionable ? 46 : 10))}px`
-    this.node.setAttribute("aria-label", ready ? "Группа готова" : text)
-    this.node.title = ready ? "Готово" : actionable ? text : "Синхронизация"
+    this.node.setAttribute("aria-label", ready ? t("playerIndicator.groupReady") : text)
+    this.node.title = ready ? t("playerIndicator.done") : actionable ? text : t("playerIndicator.synchronizing")
     this.node.style.borderRadius = actionable ? "7px" : "50%"
     this.node.style.padding = actionable ? "6px 9px" : "0"
     this.node.style.width = actionable ? "auto" : "28px"

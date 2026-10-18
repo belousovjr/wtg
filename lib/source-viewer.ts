@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 import { CHANNEL } from "./messages"
 import { sameFrameLocation, samePageLocation, sameVideoSelection, sourceRevision, webUrl, type SourceReadiness, type SourceStatus } from "./source"
 import { validShared, type SharedState } from "./room-protocol"
@@ -131,7 +132,7 @@ export async function applyExactTabUrl(tabId: number, url: string) {
     if (webUrl(tab.url || "") === url && (!tab.pendingUrl || webUrl(tab.pendingUrl) === url)) return
     await new Promise(resolve => setTimeout(resolve, 50))
   }
-  throw new Error("Браузер не применил точный URL просмотра")
+  throw new Error(t("sourceViewer.urlNotApplied"))
 }
 export function applySourceState(value: SourceState) {
   return serial(async () => {
@@ -150,12 +151,12 @@ export function applySourceState(value: SourceState) {
 export function forwardPlaybackEvent(sender: chrome.runtime.MessageSender, message: { roomId: string; revision: number; event: { kind: string; request?: unknown; report?: unknown } }) {
   return serial(async () => {
     await load()
-    if (!state?.ready || !viewer || sender.tab?.id !== viewer.tabId || sender.frameId !== viewer.frameId || message.roomId !== state.roomId || message.revision !== sourceRevision(state.shared)) throw new Error("Устаревшая привязка плеера")
+    if (!state?.ready || !viewer || sender.tab?.id !== viewer.tabId || sender.frameId !== viewer.frameId || message.roomId !== state.roomId || message.revision !== sourceRevision(state.shared)) throw new Error(t("sourceViewer.staleBinding"))
     const event = message.event
     const command = event?.kind === "request" && validPlaybackRequest(event.request) ? { kind: "playback", request: event.request } : event?.kind === "report" && validPlayerReport(event.report) ? { kind: "player-report", report: event.report } : null
-    if (!command) throw new Error("Некорректное событие плеера")
+    if (!command) throw new Error(t("sourceViewer.invalidEvent"))
     const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "offscreen", type: "room", command })
-    if (!reply?.ok) throw new Error(reply?.error || "Не удалось передать управление")
+    if (!reply?.ok) throw new Error(reply?.error || t("sourceViewer.controlFailed"))
     return null
   })
 }
@@ -209,10 +210,10 @@ export async function autoBindActiveSource() {
 export function focusSource() {
   return serial(async () => {
     await load()
-    if (!viewer || viewer.closed) throw new Error("Вкладка просмотра не привязана или закрыта. Нажми «Назначить эту вкладку для просмотра».")
+    if (!viewer || viewer.closed) throw new Error(t("sourceViewer.unboundHint"))
     let tab: chrome.tabs.Tab
     try { tab = await chrome.tabs.get(viewer.tabId) }
-    catch { viewer.closed = true; await persist(); await report("unavailable"); throw new Error("Вкладка просмотра закрыта. Нажми «Назначить эту вкладку для просмотра».") }
+    catch { viewer.closed = true; await persist(); await report("unavailable"); throw new Error(t("sourceViewer.closedHint")) }
     await chrome.tabs.update(viewer.tabId, { active: true })
     if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true })
     return viewer
@@ -222,11 +223,11 @@ export function openSourceUrl() {
   return serial(async () => {
     await load()
     const url = webUrl(state?.shared.url || "")
-    if (!state?.ready || !state.roomId || !url) throw new Error("Страница просмотра пока недоступна")
-    if (!viewer || viewer.closed || viewer.roomId !== state.roomId) throw new Error("Вкладка просмотра не привязана или закрыта")
+    if (!state?.ready || !state.roomId || !url) throw new Error(t("sourceViewer.sourceUnavailable"))
+    if (!viewer || viewer.closed || viewer.roomId !== state.roomId) throw new Error(t("sourceViewer.unbound"))
     let tab: chrome.tabs.Tab
     try { tab = await chrome.tabs.get(viewer.tabId) }
-    catch { viewer.closed = true; await persist(); await report("unavailable"); throw new Error("Вкладка просмотра закрыта") }
+    catch { viewer.closed = true; await persist(); await report("unavailable"); throw new Error(t("sourceViewer.closed")) }
     if (!samePageLocation(tab.url || "", url)) {
       await suspendViewer()
       await chrome.tabs.update(viewer.tabId, { url })

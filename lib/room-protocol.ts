@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 import type { VideoDescriptor } from "./video"
 import type { MemberCommand } from "./membership"
 import { validCommit, validPlaybackRequest, validPlayerReport, type Commit, type PlaybackLocal, type PlaybackRequest, type PlayerReport } from "./playback"
@@ -53,7 +54,7 @@ export function decodeInvitation(text: string): Invitation {
     const data = JSON.parse(atob(raw))
     if (data.version !== ROOM_VERSION || !token.test(data.roomId) || !token.test(data.secret) || typeof data.adminKey !== "string" || !/^[A-Za-z0-9_-]{87}$/.test(data.adminKey)) throw new Error()
     return data
-  } catch { throw new Error("Некорректное приглашение или неподдерживаемая версия") }
+  } catch { throw new Error(t("roomProtocol.invalidInvitation")) }
 }
 export function validShared(value: unknown): value is SharedState {
   if (!value || typeof value !== "object") return false

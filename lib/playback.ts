@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 export const now = () => performance.timeOrigin + performance.now()
 export type PlaybackRequest = { epoch: string; commandId: string; revision: number; action: "play" | "pause" | "seek" | "rate"; position: number; rate: number }
 export type Commit = { epoch: string; revision: number; sequence: number; commandId: string; executeAt: number; position: number; paused: boolean; rate: number }
@@ -106,11 +107,11 @@ export class PlaybackSession {
     this.emit()
   }
   async request(request: PlaybackRequest, from = this.options.selfId) {
-    if (!validPlaybackRequest(request) || request.revision !== this.options.revision()) throw new Error("Команда относится к другому видео")
-    if (request.epoch !== this.epoch) throw new Error("Сессия координатора изменилась. Повтори действие.")
-    if (!this.options.ready()) throw new Error("Дождись подключения к администратору")
+    if (!validPlaybackRequest(request) || request.revision !== this.options.revision()) throw new Error(t("playback.wrongVideo"))
+    if (request.epoch !== this.epoch) throw new Error(t("playback.epochChanged"))
+    if (!this.options.ready()) throw new Error(t("playback.waitAdmin"))
     if (!this.options.isAdmin) {
-      if (!this.options.adminId()) throw new Error("Администратор недоступен")
+      if (!this.options.adminId()) throw new Error(t("playback.adminUnavailable"))
       await this.options.send("pb-request", { request }, this.options.adminId()!)
       return
     }
@@ -147,7 +148,7 @@ export class PlaybackSession {
   }
   async receive(kind: string, message: Record<string, unknown>, from: string, isAdminSender: boolean) {
     if (kind === "pb-request" && this.options.isAdmin && validPlaybackRequest(message.request)) {
-      try { await this.request(message.request, from) } catch (error) { await this.options.send("pb-error", { error: error instanceof Error ? error.message : "Команда отклонена" }, from) }
+      try { await this.request(message.request, from) } catch (error) { await this.options.send("pb-error", { error: error instanceof Error ? error.message : t("playback.rejected") }, from) }
     }
     if (kind === "pb-error" && isAdminSender && typeof message.error === "string") this.options.error(message.error.slice(0, 200))
     if (kind === "pb-state" && isAdminSender) await this.acceptSnapshot(message.playback)

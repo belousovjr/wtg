@@ -1,3 +1,4 @@
+import { t } from "../lib/i18n"
 import { useEffect, useState } from "react"
 import { CHANNEL } from "../lib/messages"
 import { decodeInvitation, type RoomView } from "../lib/room-protocol"
@@ -42,21 +43,21 @@ export function SourceControls({ room }: { room: RoomView }) {
       const actions = hasViewingTab ? ["source-open-url", "source-focus"] : ["source-attach"]
       for (const type of actions) {
         const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type })
-        if (!reply?.ok) throw new Error(reply?.error || "Вкладка просмотра недоступна")
+        if (!reply?.ok) throw new Error(reply?.error || t("sourceControls.tabUnavailable"))
       }
-    } catch (error) { setTabError(error instanceof Error ? error.message : "Вкладка просмотра недоступна") }
+    } catch (error) { setTabError(error instanceof Error ? error.message : t("sourceControls.tabUnavailable")) }
     finally { setTabBusy(false) }
   }
-  return <Card size="sm"><CardHeader className="flex flex-row items-center justify-between gap-2"><CardTitle className="flex shrink-0 items-center gap-2"><Globe className="size-4 text-muted-foreground" />Просмотр</CardTitle>
+  return <Card size="sm"><CardHeader className="flex flex-row items-center justify-between gap-2"><CardTitle className="flex shrink-0 items-center gap-2"><Globe className="size-4 text-muted-foreground" />{t("sourceControls.viewing")}</CardTitle>
     <div ref={setPlayerActions} className="flex justify-end" />
     </CardHeader>
     <CardContent className="space-y-3">
     <VideoPicker room={room} actionContainer={playerActions} hidePreview={!!room.shared.url && (!tabChecked || !isViewingTab || wrongUrl)} />
-    {room.shared.url && tabChecked && (!isViewingTab || wrongUrl) && <Alert><AlertDescription>{!hasViewingTab ? "Открой просмотр — общая страница загрузится в этой вкладке." : "Ты не на странице просмотра. Нажми «К просмотру», чтобы открыть её."}</AlertDescription></Alert>}
+    {room.shared.url && tabChecked && (!isViewingTab || wrongUrl) && <Alert><AlertDescription>{!hasViewingTab ? t("sourceControls.missingTab") : t("sourceControls.wrongTab")}</AlertDescription></Alert>}
     {room.shared.url && <CardDescription className="break-all text-xs">{room.shared.url}</CardDescription>}
     {room.shared.url && <>
-      {tabChecked && isViewingTab && !wrongUrl && room.sourceReadiness[room.selfId]?.status === "unavailable" && <Alert><AlertDescription>Плеер пока недоступен. Проверяем привязку…</AlertDescription></Alert>}
-      {tabChecked && (!isViewingTab || wrongUrl) && <Button size="sm" disabled={tabBusy} onClick={() => void openViewing()}>{tabBusy ? <Spinner /> : <ExternalLink />}К просмотру</Button>}
+      {tabChecked && isViewingTab && !wrongUrl && room.sourceReadiness[room.selfId]?.status === "unavailable" && <Alert><AlertDescription>{t("sourceControls.playerUnavailable")}</AlertDescription></Alert>}
+      {tabChecked && (!isViewingTab || wrongUrl) && <Button size="sm" disabled={tabBusy} onClick={() => void openViewing()}>{tabBusy ? <Spinner /> : <ExternalLink />}{t("sourceControls.openViewing")}</Button>}
     </>}
     {tabError && <Alert variant="destructive"><AlertDescription>{tabError}</AlertDescription></Alert>}
     </CardContent>

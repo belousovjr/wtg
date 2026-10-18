@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 import { joinRoom, selfId } from "trystero"
 import { PlaybackSession } from "./playback"
 import { commitSource, sourceRevision, validReadiness, type SourceCommand, type SourceReadiness } from "./source"
@@ -56,7 +57,7 @@ async function applyEnd(certificate: EndCertificate) {
   if (!vault.ended.some(c => c.roomId === certificate.roomId && c.adminKey === certificate.adminKey)) vault.ended.push(archived)
   await disconnect()
   invite = undefined
-  view = { ...idle(), error: "Комната завершена создателем" }
+  view = { ...idle(), error: t("room.ended") }
   await save()
   notifySource()
   startTombstone(archived)
@@ -75,7 +76,7 @@ function startTombstone(certificate: EndCertificate) {
 }
 
 async function connect(retryDelay = 30000) {
-  if (!invite || !vault.identity) throw new Error("Нет сохранённой комнаты")
+  if (!invite || !vault.identity) throw new Error(t("room.noSavedRoom"))
   await disconnect()
   const epoch = generation, current = invite, identity = vault.identity
   const isAdmin = identity.publicKey === current.adminKey
@@ -98,7 +99,7 @@ async function connect(retryDelay = 30000) {
   const seen = new Map<string, string[]>()
   try {
     room = joinRoom({ appId: "wtg-watch-together-v5", password: current.secret }, current.roomId, {
-      onJoinError: () => { if (epoch === generation) view = { ...view, status: "error", error: "Соединение не установлено. Повторяем автоматически; в некоторых сетях нужен TURN." } }
+      onJoinError: () => { if (epoch === generation) view = { ...view, status: "error", error: t("room.connectionFailed") } }
     })
     const transport = room, action = transport.makeAction("wtg-state")
     const send = async (kind: string, data: object = {}, target?: string) => {
@@ -135,7 +136,7 @@ async function connect(retryDelay = 30000) {
       if (!isAdmin) view.participants = view.participants.filter(id => isAdmitted(next, memberKeys[id]))
       view.approvalRequired = next.approvalRequired
       if (next.blocked.includes(identity.publicKey)) {
-        await disconnect(); invite = undefined; view = { ...idle(), error: "Вы удалены администратором" }; await save(); notifySource(); return false
+        await disconnect(); invite = undefined; view = { ...idle(), error: t("room.removed") }; await save(); notifySource(); return false
       }
       return true
     }
@@ -170,10 +171,10 @@ async function connect(retryDelay = 30000) {
       await snapshot()
     }
     changeSource = async command => {
-      if (!view.ready) throw new Error("Дождитесь подключения к администратору")
+      if (!view.ready) throw new Error(t("room.waitAdmin"))
       if (isAdmin) await acceptSource(command, selfId)
       else {
-        if (!view.adminId) throw new Error("Администратор недоступен")
+        if (!view.adminId) throw new Error(t("room.adminUnavailable"))
         await send("source-request", { command }, view.adminId)
       }
     }
@@ -184,19 +185,19 @@ async function connect(retryDelay = 30000) {
       else if (view.adminId) await send("source-ready", { readiness }, view.adminId)
     }
     manageMember = async command => {
-      if (!isAdmin || !policy || epoch !== generation) throw new Error("Только администратор может менять допуск")
+      if (!isAdmin || !policy || epoch !== generation) throw new Error(t("room.adminOnlyAdmission"))
       const key = command.kind === "readmit" ? command.publicKey : authenticated.get(command.peerId)
-      if (!key || key === current.adminKey) throw new Error("Участник недоступен или является администратором")
-      if (command.kind === "remove" && !isAdmitted(policy, key)) throw new Error("Участник не допущен в комнату")
+      if (!key || key === current.adminKey) throw new Error(t("room.unavailableMember"))
+      if (command.kind === "remove" && !isAdmitted(policy, key)) throw new Error(t("room.notAdmitted"))
       if (command.kind === "remove") {
         const nickname = view.participantNames?.[command.peerId]
         if (validNickname(nickname)) vault.removedNames = [...(vault.removedNames || []).filter(n => n.roomId !== current.roomId || n.publicKey !== key), { roomId: current.roomId, publicKey: key, nickname }].slice(-4096)
       }
-      if (command.kind === "readmit" && !policy.blocked.includes(key)) throw new Error("Участник не заблокирован")
+      if (command.kind === "readmit" && !policy.blocked.includes(key)) throw new Error(t("room.notBlocked"))
       const allowed = policy.allowed.filter(k => k !== key), blocked = policy.blocked.filter(k => k !== key)
       if (command.kind === "remove") blocked.push(key)
       else allowed.push(key)
-      if (allowed.length > 128 || blocked.length > 128) throw new Error("Достигнут лимит списка допуска")
+      if (allowed.length > 128 || blocked.length > 128) throw new Error(t("room.memberLimit"))
       const data = { ...policy, revision: policy.revision + 1, approvalRequired: policy.approvalRequired || command.kind === "remove", allowed, blocked }
       const next = { ...data, signature: await sign(identity, policyText(data)) }
       await publishPolicy(next)
@@ -217,7 +218,7 @@ async function connect(retryDelay = 30000) {
       if (!rate || now - rate.start > 1000) rates.set(peerId, { start: now, count: 1 })
       else if (++rate.count > 20) return
       const m = value as Record<string, unknown>
-      if (m.version !== 5) { view.error = "У участника несовместимая версия протокола"; return }
+      if (m.version !== 5) { view.error = t("room.incompatibleProtocol"); return }
       if (m.roomId !== current.roomId || typeof m.id !== "string" || m.id.length > 64 || !Number.isSafeInteger(m.sequence)) return
       const ids = seen.get(peerId) || []
       if (ids.includes(m.id)) return
@@ -232,7 +233,7 @@ async function connect(retryDelay = 30000) {
       }
       if (m.kind === "source-request" && isAdmin && validRoomCommand(m.command) && m.command.kind === "source") {
         try { await acceptSource(m.command, peerId) }
-        catch (error) { await send("source-rejected", { error: error instanceof Error ? error.message : "Источник не принят" }, peerId) }
+        catch (error) { await send("source-rejected", { error: error instanceof Error ? error.message : t("room.sourceRejected") }, peerId) }
       }
       if (m.kind === "source-rejected" && authenticated.get(peerId) === current.adminKey && typeof m.error === "string") view.error = m.error.slice(0, 200)
       if (m.kind === "source-ready" && isAdmin && validReadiness(m.readiness) && m.readiness.revision === sourceRevision(view.shared)) {
@@ -289,22 +290,22 @@ async function connect(retryDelay = 30000) {
       }
       if (m.kind === "policy" && !isAdmin && authenticated.get(peerId) === current.adminKey && !isAdmitted(policy, identity.publicKey)) {
         lastAdminSeen = now
-        view.ready = false; view.error = "Ожидаем допуска администратора"
+        view.ready = false; view.error = t("room.waitingApproval")
       }
       if (m.kind === "ended" && validCertificate(m.certificate)) {
         // A signed certificate can safely be forwarded by any peer.
         await applyEnd(m.certificate)
       }
     }
-    action.onMessage = (value, { peerId }) => { void serialized(() => receive(value, peerId)).catch(error => { view.error = error instanceof Error ? error.message : "Ошибка обработки сообщения" }) }
+    action.onMessage = (value, { peerId }) => { void serialized(() => receive(value, peerId)).catch(error => { view.error = error instanceof Error ? error.message : t("room.messageError") }) }
     transport.onPeerJoin = peerId => { void serialized(async () => {
       if (epoch === generation) await challenge(peerId)
-    }).catch(() => { view.error = "Не удалось подтвердить участника" }) }
+    }).catch(() => { view.error = t("room.authenticationFailed") }) }
     transport.onPeerLeave = peerId => {
       void serialized(async () => {
         if (epoch !== generation) return
         authenticated.delete(peerId); challenges.delete(peerId); rates.delete(peerId); seen.delete(peerId)
-        if (view.adminId === peerId) { view.adminId = null; view.ready = false; view.status = "reconnecting"; view.error = "Ожидаем возвращения администратора"; notifySource() }
+        if (view.adminId === peerId) { view.adminId = null; view.ready = false; view.status = "reconnecting"; view.error = t("room.waitingReturn"); notifySource() }
         if (isAdmin) await snapshot()
       }).catch(() => {})
     }
@@ -313,16 +314,16 @@ async function connect(retryDelay = 30000) {
       if (isAdmin) await snapshot()
       else {
         if (view.adminId) await send("hello", {}, view.adminId)
-        if (Date.now() - lastAdminSeen > 15000) { view.ready = false; view.status = "reconnecting"; view.error = "Ожидаем возвращения администратора"; notifySource() }
-        if (!view.ready && view.error !== "Ожидаем допуска администратора" && Date.now() >= nextRetry) {
+        if (Date.now() - lastAdminSeen > 15000) { view.ready = false; view.status = "reconnecting"; view.error = t("room.waitingReturn"); notifySource() }
+        if (!view.ready && view.error !== t("room.waitingApproval") && Date.now() >= nextRetry) {
           // Trystero retries signaling too; periodic rebuild recovers stale transports.
           await connect(Math.min(retryDelay * 2, 300000))
         }
       }
-    }).catch(error => { view.error = error instanceof Error ? error.message : "Ошибка соединения" }) }, 5000)
+    }).catch(error => { view.error = error instanceof Error ? error.message : t("room.connectionError") }) }, 5000)
   } catch (error) {
     await disconnect()
-    view = { ...view, ready: false, sync: undefined, status: "error", error: error instanceof Error ? error.message : "Ошибка подключения" }
+    view = { ...view, ready: false, sync: undefined, status: "error", error: error instanceof Error ? error.message : t("room.joinError") }
   }
   notifySource()
 }
@@ -332,9 +333,9 @@ export function initializeRoom() {
     vault = validateVault(await vaultRequest("read"))
     view.nickname = vault.nickname
     if (!vault.identity) { vault.identity = await createIdentity(); await vaultRequest("write", vault) }
-    if (!await validateIdentity(vault.identity)) throw new Error("Сохранённые ключи не соответствуют друг другу; восстановление остановлено")
+    if (!await validateIdentity(vault.identity)) throw new Error(t("room.corruptKeys"))
     for (const policy of vault.policies || []) {
-      if (!await verify(policy.adminKey, policy.signature, policyText(policy))) throw new Error("Повреждена подпись правил допуска")
+      if (!await verify(policy.adminKey, policy.signature, policyText(policy))) throw new Error(t("room.corruptPolicy"))
     }
     for (const certificate of vault.ended) {
       if (await verify(certificate.adminKey, certificate.signature, endText(certificate))) startTombstone(certificate)
@@ -355,7 +356,7 @@ export function roomCommand(command: RoomCommand): Promise<RoomView> {
   return serialized(async () => {
     await initializeRoom()
     if (command.kind === "nickname") {
-      if (!validNickname(command.nickname)) throw new Error("Укажи прозвище от 1 до 32 символов")
+      if (!validNickname(command.nickname)) throw new Error(t("room.invalidNickname"))
       vault.nickname = command.nickname
       await save()
     }
@@ -365,11 +366,11 @@ export function roomCommand(command: RoomCommand): Promise<RoomView> {
       await disconnect(); invite = undefined; view = { ...idle(), nickname: vault.nickname }; await save(); notifySource()
     }
     if (command.kind === "create" || command.kind === "join") {
-      if (invite) throw new Error("Сначала выйдите из текущей комнаты")
+      if (invite) throw new Error(t("room.leaveFirst"))
       const next: Invitation = command.kind === "create" ? { version: 2, roomId: randomToken(), secret: randomToken(), adminKey: vault.identity!.publicKey } : decodeInvitation(command.invitation.trim())
-      if (vault.ended.some(c => c.roomId === next.roomId && c.adminKey === next.adminKey)) throw new Error("Комната уже завершена")
+      if (vault.ended.some(c => c.roomId === next.roomId && c.adminKey === next.adminKey)) throw new Error(t("room.alreadyEnded"))
       if (command.nickname !== undefined) {
-        if (!validNickname(command.nickname)) throw new Error("Укажи прозвище от 1 до 32 символов")
+        if (!validNickname(command.nickname)) throw new Error(t("room.invalidNickname"))
         vault.nickname = command.nickname
       }
       invite = next
@@ -379,21 +380,21 @@ export function roomCommand(command: RoomCommand): Promise<RoomView> {
     }
     if (command.kind === "retry") await connect()
     if (command.kind === "source") {
-      if (!changeSource || !validRoomCommand(command)) throw new Error("Источник недоступен")
+      if (!changeSource || !validRoomCommand(command)) throw new Error(t("room.sourceUnavailable"))
       await changeSource(command)
     }
     if (command.kind === "source-ready" && reportSource) await reportSource(command.readiness)
     if (command.kind === "playback") {
-      if (!playbackSession || !view.shared.video) throw new Error("Сначала выбери плеер для комнаты")
+      if (!playbackSession || !view.shared.video) throw new Error(t("room.choosePlayer"))
       await playbackSession.request(command.request)
     }
     if (command.kind === "player-report") await playbackSession?.player(command.report)
     if (command.kind === "remove" || command.kind === "approve" || command.kind === "readmit") {
-      if (!view.isAdmin || !manageMember) throw new Error("Только администратор может управлять участниками")
+      if (!view.isAdmin || !manageMember) throw new Error(t("room.adminOnlyMembers"))
       await manageMember(command)
     }
     if (command.kind === "end") {
-      if (!invite || !view.isAdmin) throw new Error("Завершить комнату может только создатель")
+      if (!invite || !view.isAdmin) throw new Error(t("room.adminOnlyEnd"))
       const data = { roomId: invite.roomId, adminKey: invite.adminKey, endedAt: Date.now() }
       const certificate = { ...data, signature: await sign(vault.identity!, endText(data)), invitation: encodeInvitation(invite) }
       // Persist before transmission; never reopen a room if delivery is interrupted.

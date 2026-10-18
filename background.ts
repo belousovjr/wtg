@@ -1,3 +1,5 @@
+import { t } from "./lib/i18n"
+import { startLocaleBackground } from "./lib/locale-sync"
 import { CHANNEL, isRequest, type Request } from "./lib/messages"
 import { validateVault } from "./lib/persistence"
 import { decodeInvitation } from "./lib/room-protocol"
@@ -7,10 +9,11 @@ import { handleBindingMessage } from "./lib/bindings"
 import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, refreshManagedSource, expectLocalSourcePick } from "./lib/source-viewer"
 
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
+startLocaleBackground()
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || message?.channel !== CHANNEL || message.to !== "background") return
   if (message.type === "playback-event" && sender.tab) {
-    void forwardPlaybackEvent(sender, message).then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка управления" }))
+    void forwardPlaybackEvent(sender, message).then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : t("background.controlError") }))
     return true
   }
   if (message.type === "source-state") {
@@ -23,23 +26,23 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true
   }
   if (message.type === "source-focus" && !sender.tab) {
-    void focusSource().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Вкладка недоступна" }))
+    void focusSource().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : t("background.tabUnavailable") }))
     return true
   }
   if (message.type === "source-open-url" && !sender.tab) {
-    void openSourceUrl().then(() => respond({ ok: true }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Страница недоступна" }))
+    void openSourceUrl().then(() => respond({ ok: true }), error => respond({ ok: false, error: error instanceof Error ? error.message : t("background.pageUnavailable") }))
     return true
   }
   if ((message.type === "source-attach" || message.type === "source-auto-attach") && !sender.tab) {
     void (async () => {
       // Capture once at the explicit action, never infer a tab from later activity.
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-      if (tab?.id === undefined) throw new Error("Текущая вкладка недоступна")
+      if (tab?.id === undefined) throw new Error(t("background.currentTabUnavailable"))
       await ensureOffscreen()
       const reply = await chrome.runtime.sendMessage({ channel: CHANNEL, to: "offscreen", type: "room", command: { kind: "status" } })
-      if (!reply?.ok || !reply.data.invitation) throw new Error("Сначала подключись к комнате")
+      if (!reply?.ok || !reply.data.invitation) throw new Error(t("background.joinFirst"))
       return bindSourceTab(tab.id, decodeInvitation(reply.data.invitation).roomId, message.type === "source-auto-attach")
-    })().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Вкладка недоступна" }))
+    })().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : t("background.tabUnavailable") }))
     return true
   }
   if (message.type === "vault") {
@@ -53,12 +56,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       }
       if (message.operation !== "read") throw new Error("Unknown storage operation")
       return validateVault((await chrome.storage.local.get("vault")).vault)
-    })().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка хранилища" }))
+    })().then(data => respond({ ok: true, data }), error => respond({ ok: false, error: error instanceof Error ? error.message : t("background.storageError") }))
     return true
   }
   if (message.type === "binding-load" || message.type === "binding-save") {
     if (sender.tab?.id === undefined || sender.frameId === undefined) return
-    void storageReady.then(() => handleBindingMessage(message, sender)).then(data => respond({ ok: true, data }), () => respond({ ok: false, error: "Не удалось восстановить привязку" }))
+    void storageReady.then(() => handleBindingMessage(message, sender)).then(data => respond({ ok: true, data }), () => respond({ ok: false, error: t("background.bindingRestoreFailed") }))
     return true
   }
 })
@@ -110,7 +113,7 @@ async function handle(message: Request) {
   if (message.type === "room") {
     const entering = message.command.kind === "create" || message.command.kind === "join"
     const [tab] = entering ? await chrome.tabs.query({ active: true, lastFocusedWindow: true }) : []
-    if (entering && tab?.id === undefined) throw new Error("Не удалось определить вкладку просмотра")
+    if (entering && tab?.id === undefined) throw new Error(t("background.viewingTabUnknown"))
     await ensureOffscreen()
     const reply = await chrome.runtime.sendMessage({ ...message, to: "offscreen" })
     if (entering && reply?.ok && reply.data.invitation && tab?.id !== undefined) {
@@ -149,10 +152,10 @@ async function handle(message: Request) {
       const key = `videoPick:${message.target.tabId}`
       if (message.action.shared) {
         const tab = await chrome.tabs.get(message.target.tabId)
-        if (!tab.url) throw new Error("Не удалось прочитать адрес выбранной вкладки")
+        if (!tab.url) throw new Error(t("background.selectedTabUrlMissing"))
         await chrome.storage.session.set({ [key]: { ...message.action.shared, url: tab.url, expires: Date.now() + 60000 } })
       }
-      else throw new Error("Выбор плеера доступен только для всей группы")
+      else throw new Error(t("background.sharedPickOnly"))
     }
     return chrome.tabs.sendMessage(message.target.tabId, { channel: CHANNEL, to: "content", type: "video", action: message.action }, { frameId: message.target.frameId })
   }
@@ -174,32 +177,32 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const intent = (await chrome.storage.session.get(key))[key]
       await chrome.storage.session.remove(key)
       if (message.type !== "video-selected") return
-      if (!intent) throw new Error("Нет активного общего выбора. Открой расширение и выбери плеер для всех.")
-      if (intent.expires < Date.now()) throw new Error("Выбор истёк. Открой расширение и попробуй снова.")
+      if (!intent) throw new Error(t("background.noPickIntent"))
+      if (intent.expires < Date.now()) throw new Error(t("background.pickExpired"))
       const current = await handle({ channel: CHANNEL, to: "background", type: "room", command: { kind: "status" } })
-      if (!current?.ok || !current.data.ready || !current.data.invitation || decodeInvitation(current.data.invitation).roomId !== intent.roomId || sourceRevision(current.data.shared) !== intent.revision) throw new Error("Источник комнаты изменился. Выбери плеер заново.")
+      if (!current?.ok || !current.data.ready || !current.data.invitation || decodeInvitation(current.data.invitation).roomId !== intent.roomId || sourceRevision(current.data.shared) !== intent.revision) throw new Error(t("background.sourceChanged"))
       const result = await handle({ channel: CHANNEL, to: "background", type: "tab-videos", tabId })
       const videos = result?.data as TabVideos
       const video = videos?.frames.find(frame => frame.frameId === sender.frameId)?.snapshot.videos.find(video => video.id === message.selectedId)
-      if (!video) throw new Error("Выбранный плеер недоступен")
+      if (!video) throw new Error(t("background.selectedPlayerUnavailable"))
       const source = pickedSource(intent.url, video.descriptor)
       await expectLocalSourcePick(intent.roomId, tabId, intent.revision, source.video)
       const reply = await handle({ channel: CHANNEL, to: "background", type: "room", command: { kind: "source", ...source, expectedRevision: intent.revision, commandId: crypto.randomUUID() } })
-      if (!reply?.ok) throw new Error(reply?.error || "Не удалось выбрать плеер для всех")
+      if (!reply?.ok) throw new Error(reply?.error || t("background.sharedPickFailed"))
     })()
     const cleanup = chrome.webNavigation.getAllFrames({ tabId }).then(frames => Promise.allSettled(
       (frames || []).filter(frame => frame.frameId !== sender.frameId).map(frame =>
         chrome.tabs.sendMessage(tabId, { channel: CHANNEL, to: "content", type: "video", action: { kind: message.type === "video-selected" ? "clear" : "cancel" } }, { frameId: frame.frameId }))
     ))
-    void Promise.all([selection, cleanup]).then(() => respond({ ok: true, data: null }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка выбора плеера" }))
+    void Promise.all([selection, cleanup]).then(() => respond({ ok: true, data: null }), error => respond({ ok: false, error: error instanceof Error ? error.message : t("background.pickError") }))
     return true
   }
   if (sender.tab && (!("target" in message) || message.target.tabId !== sender.tab.id || message.target.frameId !== sender.frameId)) {
-    respond({ ok: false, error: "Недоступный адрес сообщения" })
+    respond({ ok: false, error: t("background.messageTargetUnavailable") })
     return
   }
   void handle(message).then(respond, (error: unknown) => {
-    respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка расширения" })
+    respond({ ok: false, error: error instanceof Error ? error.message : t("background.extensionError") })
   })
   return true
 })

@@ -1,3 +1,6 @@
+import { t } from "../lib/i18n"
+import { startLocaleClient } from "../lib/locale-sync"
+startLocaleClient()
 import type { PlasmoCSConfig } from "plasmo"
 import { CHANNEL, isRequest, type FrameStatus, type Reply } from "../lib/messages"
 import { describe, resolve, videosIn } from "../lib/video-dom"
@@ -9,8 +12,8 @@ let selected: HTMLVideoElement | undefined
 const playerSync = new PlayerSync(() => selected, (roomId, revision, event) => {
   void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "playback-event", roomId, revision, event }).then(reply => {
     if (event.kind === "request") console.info("[WTG playback] Ответ background", { action: event.request.action, commandId: event.request.commandId, ok: !!reply?.ok, error: reply?.ok ? undefined : reply?.error })
-    if (!reply?.ok) bindingNotice = reply?.error || "Не удалось передать управление"
-  }).catch(() => { bindingNotice = "Потеряна связь с комнатой"; console.warn("[WTG playback] Нет ответа background") })
+    if (!reply?.ok) bindingNotice = reply?.error || t("video.controlForwardFailed")
+  }).catch(() => { bindingNotice = t("video.roomDisconnected"); console.warn("[WTG playback] Нет ответа background") })
 })
 let descriptor: VideoDescriptor | undefined
 let bindingNotice: string | undefined
@@ -24,7 +27,7 @@ function bindRoomSource(message: { roomId: string; revision: number; descriptor:
   const changed = roomSource?.roomId !== message.roomId || roomSource?.revision !== message.revision || JSON.stringify(roomSource.descriptor) !== JSON.stringify(message.descriptor)
   roomSource = { roomId: message.roomId, revision: message.revision, descriptor: message.descriptor }
   const matches = resolve(message.descriptor, { shared: message.shared })
-  if (matches.length !== 1) { roomBoundVideo = undefined; setSelected(); descriptor = undefined; bindingNotice = "Плеер комнаты не найден. Выбери соответствующее видео у себя."; return "needs-video" }
+  if (matches.length !== 1) { roomBoundVideo = undefined; setSelected(); descriptor = undefined; bindingNotice = t("video.roomPlayerMissing"); return "needs-video" }
   const video = matches[0]
   const newlyBound = selected !== video
   clearInterval(restoreTimer)
@@ -58,13 +61,13 @@ function setSelected(video?: HTMLVideoElement) {
 }
 void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "binding-load" }).then(reply => {
   if (!reply?.ok || selected || descriptor) return
-  if (reply.data?.ambiguous) { bindingNotice = "Несколько одинаковых вкладок или фреймов. Выбери видео вручную."; return }
+  if (reply.data?.ambiguous) { bindingNotice = t("video.duplicateFrames"); return }
   const binding = reply.data?.binding
   if (!binding) return
   descriptor = binding.descriptor
   let attempts = 0
   const restore = () => {
-    if (++attempts > 30) { clearInterval(restoreTimer); bindingNotice = "Не удалось восстановить плеер. Выбери видео заново."; return }
+    if (++attempts > 30) { clearInterval(restoreTimer); bindingNotice = t("video.restoreFailed"); return }
     const matches = resolve(binding.descriptor)
     if (matches.length !== 1) return
     const video = matches[0]
@@ -77,7 +80,7 @@ void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "bin
       if (Number.isFinite(video.duration)) video.currentTime = Math.min(binding.position, Math.max(0, video.duration - 0.1))
       bindingNotice = undefined
       clearInterval(restoreTimer)
-    } catch { bindingNotice = "Позиция недоступна. Выбери видео заново." }
+    } catch { bindingNotice = t("video.positionUnavailable") }
     finally { restoring = false }
   }
   restoreTimer = setInterval(restore, 2000)
@@ -142,8 +145,8 @@ function select(video: HTMLVideoElement) {
   setSelected(video)
   persistBinding(true)
   void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "video-selected", selectedId: idFor(video) }).then(reply => {
-    if (!reply?.ok) bindingNotice = reply?.error || "Ошибка выбора плеера"
-  }).catch(() => { bindingNotice = "Не удалось передать выбор плеера" })
+    if (!reply?.ok) bindingNotice = reply?.error || t("video.pickError")
+  }).catch(() => { bindingNotice = t("video.pickForwardFailed") })
 }
 function onClick(event: MouseEvent) {
   const video = candidate(event)
@@ -173,7 +176,7 @@ function snapshot(): VideoSnapshot {
     selectedId: selected ? idFor(selected) : null, binding,
     videos: videosIn().map((video, index) => {
       const rect = video.getBoundingClientRect()
-      return { position: Number.isFinite(video.currentTime) ? video.currentTime : 0, playbackRate: video.playbackRate, id: idFor(video), label: document.title.trim() || video.getAttribute("aria-label") || video.title || `Видео ${index + 1}`,
+      return { position: Number.isFinite(video.currentTime) ? video.currentTime : 0, playbackRate: video.playbackRate, id: idFor(video), label: document.title.trim() || video.getAttribute("aria-label") || video.title || t("video.videoNumber", { number: index + 1 }),
         width: Math.round(rect.width), height: Math.round(rect.height),
         duration: Number.isFinite(video.duration) ? video.duration : null,
         readyState: video.readyState, paused: video.paused, poster: video.poster,
@@ -194,7 +197,7 @@ setInterval(() => {
     setSelected(replacement)
   }
   if (!replacement) {
-    bindingNotice = matches.length > 1 ? "Замена плеера неоднозначна. Выбери видео у себя." : "Ждём восстановления плеера."
+    bindingNotice = matches.length > 1 ? t("video.replacementAmbiguous") : t("video.waitingForPlayer")
     return
   }
   descriptor = describe(replacement)
@@ -243,7 +246,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           if (video) highlightTimeout = setTimeout(() => highlight(), 2500)
       }
       respond({ ok: true, data: snapshot() })
-    } catch (error) { respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка выбора видео" }) }
+    } catch (error) { respond({ ok: false, error: error instanceof Error ? error.message : t("video.videoPickError") }) }
     return
   }
   respond({ ok: true, data: { url: location.href, title: document.title } } satisfies Reply<FrameStatus>)
@@ -254,9 +257,9 @@ let startupNotice: HTMLDivElement | undefined
 let startupNoticeAnimation = 0
 function showStartupNotice(visible: boolean) {
   if (!visible) { cancelAnimationFrame(startupNoticeAnimation); startupNotice?.remove(); startupNotice = undefined; return }
-  if (startupNotice) return
+  if (startupNotice) { startupNotice.textContent = t("video.pressPlay"); return }
   startupNotice = document.createElement("div")
-  startupNotice.textContent = "Нажми Play"
+  startupNotice.textContent = t("video.pressPlay")
   startupNotice.setAttribute("role", "status")
   startupNotice.setAttribute("aria-live", "polite")
   startupNotice.style.cssText = "all:initial;position:fixed;right:90px;top:10px;z-index:2147483647;pointer-events:none;padding:6px 9px;border-radius:7px;background:rgba(20,24,30,.72);color:#ea4c89;font:500 11px/1.4 system-ui;max-width:calc(100vw - 100px);box-sizing:border-box;backdrop-filter:blur(6px)"

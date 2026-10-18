@@ -6,6 +6,7 @@ const Module = require("node:module")
 const path = require("node:path")
 const filename = path.resolve(__dirname, "../lib/video-dom.ts")
 const mod = new Module(filename, module)
+mod.require = id => id === "./i18n" ? require("./load-i18n.cjs") : require(id)
 mod._compile(ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: {
   module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021
 } }).outputText, filename)

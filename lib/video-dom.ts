@@ -1,3 +1,4 @@
+import { t } from "./i18n"
 import type { VideoDescriptor } from "./video"
 
 type Root = Document | ShadowRoot
@@ -33,7 +34,7 @@ export function selectorFor(element: Element, root: Root): string {
     if (unique(path)) return path
     node = node.parentElement
   }
-  throw new Error("Не удалось построить уникальный селектор")
+  throw new Error(t("videoDom.selectorFailed"))
 }
 
 export function describe(video: HTMLVideoElement): VideoDescriptor {

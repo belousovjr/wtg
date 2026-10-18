@@ -10,7 +10,7 @@ function load(name, clock, imports = {}, extra = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
   }).outputText
   const exports = {}
-  vm.runInNewContext(code, { exports, require: id => imports[id] || (id === "./player-indicator" ? { PlayerIndicator: class { begin() {} clear() {} update() {} } } : undefined), performance: { timeOrigin: clock.origin || 0, now: () => clock.time },
+  vm.runInNewContext(code, { exports, require: id => imports[id] || (id === "./i18n" ? require("./load-i18n.cjs") : id === "./player-indicator" ? { PlayerIndicator: class { begin() {} clear() {} update() {} } } : undefined), performance: { timeOrigin: clock.origin || 0, now: () => clock.time },
     crypto, structuredClone, setInterval: () => 1, clearInterval: () => {}, setTimeout, clearTimeout, ...extra })
   return exports
 }

@@ -10,7 +10,7 @@ function load(name, imports = {}) {
   const mod = new Module(filename, module)
   mod.filename = filename
   mod.paths = module.paths
-  mod.require = id => id in imports ? imports[id] : ["./source", "./playback"].includes(id) ? load(id.slice(2)) : require(id)
+  mod.require = id => id in imports ? imports[id] : id === "./i18n" ? require("./load-i18n.cjs") : ["./source", "./playback"].includes(id) ? load(id.slice(2)) : require(id)
   mod._compile(ts.transpileModule(readFileSync(filename, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
   }).outputText, filename)
