@@ -6,6 +6,8 @@
 
 ## Product
 
+- Removed-member display names are archived locally at removal under room ID and persistent public key (bounded optional removedNames vault field). Creator-only blockedNames maps restore labels after disconnection/restart; never display raw key fragments as names. Legacy removals without saved names use a neutral fallback. Names never affect signed membership policies or identity checks.
+
 - Popup offers “Выйти” only to guests. The creator instead has “Завершить комнату для всех” with explicit confirmation; do not offer the creator a leave action that clears their active session without terminating the room. Browser restarts still recover the saved creator session.
 
 - Participants choose a public nickname (1–32 trimmed characters, no control/bidi override characters) when creating/joining. Valid input is saved immediately via the serialized nickname command in the version-1 local vault, without requiring room entry; blank/invalid drafts preserve the last valid name. Popup status supplies it for prefill without overwriting an edited field. Nicknames are display-only and need not be unique: cryptographic keys/Peer IDs remain the sole admission/removal/control identity. React renders names as text.

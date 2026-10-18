@@ -93,7 +93,7 @@ export function RoomPanel() {
         </div>)}
       </CardContent></Card>}
       {room.isAdmin && room.blockedKeys.length > 0 && <Card size="sm"><CardHeader><CardTitle>Удалённые участники <Badge variant="secondary">{room.blockedKeys.length}</Badge></CardTitle></CardHeader><CardContent className="space-y-2">
-        {room.blockedKeys.map(key => <div className="flex items-center justify-between gap-2" key={key}><span className="font-mono text-xs">{key.slice(0, 12)}</span>
+        {room.blockedKeys.map(key => <div className="flex items-center justify-between gap-2" key={key}><span className="text-xs">{room.blockedNames?.[key] || "Участник без имени"}</span>
           <Button size="icon-sm" variant="outline" title="Разрешить вход снова" aria-label="Разрешить вход снова" disabled={busy} onClick={() => void perform({ kind: "readmit", publicKey: key })}><UserCheck /></Button>
         </div>)}
       </CardContent></Card>}

@@ -90,6 +90,7 @@ async function connect(retryDelay = 30000) {
   }
   view = { ...view, nickname: vault.nickname, participantNames: vault.nickname ? { [selfId]: vault.nickname } : {}, sync: undefined, sourceReadiness: {}, pendingParticipants: [], blockedKeys: isAdmin ? policy?.blocked || [] : [], approvalRequired: policy?.approvalRequired || false, ready: isAdmin, isAdmin, adminId: isAdmin ? selfId : null, status: "waiting", participants: isAdmin ? [selfId] : [], invitation: encodeInvitation(current), error: null }
   let sequence = 0, lastAdminSeen = Date.now(), nextRetry = Date.now() + retryDelay
+  view.blockedNames = isAdmin ? Object.fromEntries((vault.removedNames || []).filter(n => n.roomId === current.roomId && view.blockedKeys.includes(n.publicKey)).map(n => [n.publicKey, n.nickname])) : {}
   const challenges = new Map<string, { nonce: string; expires: number }>()
   const authenticated = new Map<string, string>()
   let memberKeys: Record<string, string> = {}
@@ -122,6 +123,7 @@ async function connect(retryDelay = 30000) {
       view.participants = [selfId, ...[...authenticated].filter(([, key]) => isAdmitted(policy, key)).map(([id]) => id)]
       view.pendingParticipants = [...authenticated].filter(([, key]) => !isAdmitted(policy, key) && !policy?.blocked.includes(key)).map(([peerId, publicKey]) => ({ peerId, publicKey }))
       view.blockedKeys = [...policy?.blocked || []]
+      view.blockedNames = Object.fromEntries((vault.removedNames || []).filter(n => n.roomId === current.roomId && view.blockedKeys.includes(n.publicKey)).map(n => [n.publicKey, n.nickname]))
       view.approvalRequired = policy?.approvalRequired || false
     }
     const publishPolicy = async (next: MembershipPolicy) => {
@@ -186,6 +188,10 @@ async function connect(retryDelay = 30000) {
       const key = command.kind === "readmit" ? command.publicKey : authenticated.get(command.peerId)
       if (!key || key === current.adminKey) throw new Error("Участник недоступен или является администратором")
       if (command.kind === "remove" && !isAdmitted(policy, key)) throw new Error("Участник не допущен в комнату")
+      if (command.kind === "remove") {
+        const nickname = view.participantNames?.[command.peerId]
+        if (validNickname(nickname)) vault.removedNames = [...(vault.removedNames || []).filter(n => n.roomId !== current.roomId || n.publicKey !== key), { roomId: current.roomId, publicKey: key, nickname }].slice(-4096)
+      }
       if (command.kind === "readmit" && !policy.blocked.includes(key)) throw new Error("Участник не заблокирован")
       const allowed = policy.allowed.filter(k => k !== key), blocked = policy.blocked.filter(k => k !== key)
       if (command.kind === "remove") blocked.push(key)

@@ -121,6 +121,25 @@ test("nickname persists before entering a room and prefills a fresh client", asy
   assert.equal(status.nickname, "Роза")
 })
 
+test("removed participant nickname survives administrator restart", async () => {
+  const network = [], disk = {}, guestDisk = {}
+  const admin = client("names-admin", disk, network), guest = client("names-guest", guestDisk, network)
+  const created = await admin.roomCommand({ kind: "create", nickname: "Админ" })
+  await guest.roomCommand({ kind: "join", invitation: created.invitation, nickname: "Роза" })
+  admin.transports.at(-1).onPeerJoin(guest.id)
+  guest.transports.at(-1).onPeerJoin(admin.id)
+  await settle(admin, guest)
+  const removed = await admin.roomCommand({ kind: "remove", peerId: guest.id })
+  assert.equal(removed.blockedNames[guestDisk.value.identity.publicKey], "Роза")
+  const saved = structuredClone(disk.value)
+  await admin.roomCommand({ kind: "leave" })
+  disk.value = saved
+  const restored = client("names-admin-restored", disk, network)
+  assert.equal((await restored.roomCommand({ kind: "status" })).blockedNames[guestDisk.value.identity.publicKey], "Роза")
+  await restored.roomCommand({ kind: "leave" })
+  await guest.roomCommand({ kind: "leave" })
+})
+
 test("signed end survives offline guest and cannot be forged", async () => {
   const network = [], disk = {}
   const admin = client("admin", disk, network)

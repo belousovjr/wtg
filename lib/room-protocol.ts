@@ -9,6 +9,7 @@ export type SharedState = { control?: Commit; sourceRevision?: number; url: stri
 export type RoomView = {
   nickname?: string
   participantNames?: Record<string, string>
+  blockedNames?: Record<string, string>
   sync?: PlaybackLocal
   sourceReadiness: Record<string, SourceReadiness>
   pendingParticipants: { peerId: string; publicKey: string }[]
