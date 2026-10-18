@@ -73,6 +73,16 @@ test("popup renders English labels and a native English language name", () => {
   } finally { applyLanguage("ru") }
 })
 
+test("room creation automatically chooses only a single discovered video across frames", () => {
+  const { onlyDiscoveredVideo } = load("lib/video.ts")
+  const video = { id: "one", descriptor: {} }, other = { id: "two", descriptor: {} }
+  const frame = videos => ({ snapshot: { videos, selectedId: "one" } })
+  assert.equal(onlyDiscoveredVideo({ frames: [], unavailableFrames: 0 }), undefined)
+  assert.equal(onlyDiscoveredVideo({ frames: [frame([]), frame([video])], unavailableFrames: 0 }), video)
+  assert.equal(onlyDiscoveredVideo({ frames: [frame([video, other])], unavailableFrames: 0 }), undefined)
+  assert.equal(onlyDiscoveredVideo({ frames: [frame([video]), frame([other])], unavailableFrames: 0 }), undefined)
+})
+
 test("popup business components use imported UI controls rather than handmade native equivalents", () => {
   const files = ["popup.tsx", ...readdirSync(path.join(root, "components")).filter(name => name.endsWith(".tsx")).map(name => `components/${name}`)]
   for (const file of files) {

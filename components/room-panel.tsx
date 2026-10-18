@@ -2,7 +2,7 @@ import { t } from "../lib/i18n"
 import { useEffect, useState, useRef } from "react"
 import { CHANNEL, sendRequest } from "../lib/messages"
 import type { RoomCommand, RoomView, SharedState } from "../lib/room-protocol"
-import type { TabVideos } from "../lib/video"
+import { onlyDiscoveredVideo, type TabVideos } from "../lib/video"
 import { LoadingStatus } from "./loading-status"
 import { SourceControls } from "./source-controls"
 import { GroupPlayerStatus } from "./group-player-status"
@@ -56,8 +56,11 @@ export function RoomPanel() {
       let initial: SharedState | undefined
       if (tab?.id !== undefined) {
         const videos = await sendRequest<TabVideos>({ channel: CHANNEL, to: "background", type: "tab-videos", tabId: tab.id })
-        const selected = videos.frames.flatMap(frame => frame.snapshot.videos.filter(video => video.id === frame.snapshot.selectedId))[0]
-        if (selected) initial = { url: selected.descriptor.pageUrl, video: selected.descriptor, playback: { position: selected.position, paused: selected.paused, rate: selected.playbackRate } }
+        const selected = onlyDiscoveredVideo(videos)
+        if (selected) {
+          const url = tab.url || selected.descriptor.pageUrl
+          initial = { url, video: { ...selected.descriptor, pageUrl: url }, playback: { position: selected.position, paused: true, rate: selected.playbackRate } }
+        }
       }
       setRoom(await request({ kind: "create", initial, nickname: nickname.trim() }))
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("roomPanel.createFailed")) }

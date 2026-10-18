@@ -37,3 +37,8 @@ export type TabVideos = {
   frames: { frameId: number; url: string; snapshot: VideoSnapshot }[]
   unavailableFrames: number
 }
+
+export function onlyDiscoveredVideo(data: TabVideos): VideoInfo | undefined {
+  const videos = data.frames.flatMap(frame => frame.snapshot.videos)
+  return videos.length === 1 ? videos[0] : undefined
+}

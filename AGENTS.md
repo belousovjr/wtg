@@ -6,6 +6,8 @@
 
 ## Product
 
+- Creating a room automatically shares the video only when exactly one video is discovered across accessible frames of the initiating tab. Zero or multiple candidates leave the source unset, even if a local candidate was selected earlier. Use the initiating tab's full URL and start the shared state paused; creation must not start group playback.
+
 - A shared player pick in a different tab explicitly transfers the initiating profile's viewing ownership to that picked tab after the coordinator confirms the matching next revision/descriptor and its full URL still matches. Suspend/detach the old viewer without navigating or closing it. Never transfer on a merely pending/rejected/expired selection; other participants keep their own viewers.
 
 - Header language control uses the CLI-installed shadcn Select with ru/en. Language names are hardcoded autonyms in nativeLanguageNames (“Русский”, “English”), never translated; the control's accessible label still comes from the locale dictionary. Language is a per-profile preference, not shared room state.
