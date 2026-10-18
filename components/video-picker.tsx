@@ -8,7 +8,8 @@ import { Button } from "./ui/button"
 import { Alert, AlertDescription } from "./ui/alert"
 import { Card, CardContent } from "./ui/card"
 import { Badge } from "./ui/badge"
-import { MousePointer2, MonitorPlay, TvMinimalPlay, Check, Link2, Pause, Play } from "lucide-react"
+import { Spinner } from "./ui/spinner"
+import { MonitorPlay, TvMinimalPlay, Check, Link2, Pause, Play } from "lucide-react"
 
 export function SelectedVideoPreview({ video, bound, duration }: { video?: VideoInfo; bound: boolean; duration: number | null }) {
   const [posterFailed, setPosterFailed] = useState(false)
@@ -23,14 +24,14 @@ export function SelectedVideoPreview({ video, bound, duration }: { video?: Video
     <CardContent className="space-y-2 py-3">
       <p className="truncate text-sm font-medium" title={video?.label || "Общий плеер"}>{video?.label || "Общий плеер"}</p>
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Badge variant="outline">{bound ? <Link2 className="size-3" /> : <MousePointer2 className="size-3" />}{bound ? "Привязан у тебя" : "Нужно выбрать плеер у тебя"}</Badge>
+        <Badge variant="outline" role="status">{bound ? <Link2 className="size-3" /> : <Spinner className="size-3" />}{bound ? "Привязан у тебя" : "Ищем плеер…"}</Badge>
         {bound && video && <span className="flex items-center gap-1 text-muted-foreground">{video.readyState < 2 ? "Загружается" : video.paused ? <><Pause className="size-3" />Пауза</> : <><Play className="size-3" />Играет</>}</span>}
       </div>
     </CardContent>
   </Card>
 }
 
-export function VideoPicker({ room, actionContainer }: { room: RoomView; actionContainer?: HTMLElement | null }) {
+export function VideoPicker({ room, actionContainer, hidePreview = false }: { room: RoomView; actionContainer?: HTMLElement | null; hidePreview?: boolean }) {
   const [data, setData] = useState<TabVideos>()
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
@@ -39,15 +40,19 @@ export function VideoPicker({ room, actionContainer }: { room: RoomView; actionC
     const refresh = async () => {
       try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-        if (tab?.id === undefined) throw new Error("Активная вкладка не найдена")
-        const result = await sendRequest<TabVideos>({ channel: CHANNEL, to: "background", type: "tab-videos", tabId: tab.id })
+        const stored = (await chrome.storage.session.get("sourceViewer")).sourceViewer
+        const roomId = room.invitation ? decodeInvitation(room.invitation).roomId : null
+        const viewingId = stored?.roomId === roomId && stored?.boundByUser && !stored.closed ? stored.tabId : undefined
+        const id = viewingId ?? tab?.id
+        if (id === undefined) throw new Error("Вкладка просмотра недоступна")
+        const result = await sendRequest<TabVideos>({ channel: CHANNEL, to: "background", type: "tab-videos", tabId: id })
         if (active) { setData(result); setError("") }
       } catch (cause) { if (active) setError(cause instanceof Error ? cause.message : "Страница недоступна") }
     }
     void refresh()
     const timer = setInterval(() => void refresh(), 2000)
     return () => { active = false; clearInterval(timer) }
-  }, [])
+  }, [room.invitation])
   async function pick() {
     setBusy(true)
     setError("")
@@ -74,7 +79,7 @@ export function VideoPicker({ room, actionContainer }: { room: RoomView; actionC
   const action = <Button size="sm" title="Выбрать плеер и страницу для всей группы" disabled={busy || !room.ready} onClick={() => void pick()}><MonitorPlay />{room.shared.video ? "Сменить плеер для всех" : "Выбрать плеер для всех"}</Button>
   return <section className="space-y-3">
     {actionContainer ? createPortal(action, actionContainer) : actionContainer === undefined ? action : null}
-    {room.shared.video ? <SelectedVideoPreview video={current} bound={!!bound} duration={current?.duration ?? room.shared.video.duration ?? null} /> : <p className="text-xs text-muted-foreground">Общий плеер ещё не выбран.</p>}
+    {!hidePreview && (room.shared.video ? <SelectedVideoPreview video={current} bound={!!bound} duration={current?.duration ?? room.shared.video.duration ?? null} /> : <p className="text-xs text-muted-foreground">Общий плеер ещё не выбран.</p>)}
     {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
   </section>
 }

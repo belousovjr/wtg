@@ -255,6 +255,6 @@ const refreshRoomSource = () => {
     if (window !== window.top) return
     if (reply?.data && !sourceRefreshTimer) sourceRefreshTimer = setInterval(refreshRoomSource, 2000)
     if (!reply?.data && sourceRefreshTimer) { clearInterval(sourceRefreshTimer); sourceRefreshTimer = undefined }
-  }).catch(() => { if (sourceRefreshTimer) { clearInterval(sourceRefreshTimer); sourceRefreshTimer = undefined } })
+  }).catch(() => { /* A transient worker/message failure must not stop a managed page's retries. */ })
 }
 refreshRoomSource()

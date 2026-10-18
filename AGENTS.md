@@ -30,6 +30,8 @@
 
 ## Architecture
 
+- Managed viewing pages retry source binding every 2s independently of popup lifetime; transient runtime failures must not cancel this polling. The one-minute recovery alarm also reconciles the managed viewer and wakes its top-frame poller. Missing/ambiguous players are never guessed. VideoPicker reads snapshots from the room's viewing tab (not an unrelated active tab) and displays a spinner with “Ищем плеер…” until current room/revision binding is acknowledged.
+
 - Popup document width is fixed at 400px in style.css (html width/min/max). html/body do not scroll; main is the sole scroll container with max-height: 600px, border-box sizing, permanent overflow-y: scroll and scrollbar-gutter: stable. Keep the scrollbar inside the fixed document width rather than the auto-sized Chrome popup viewport. Long URLs/selectors wrap and flex/grid children may shrink. Styles are popup-only.
 - Keep contextual actions in compact wrapping rows. Use short text for ambiguous choices (shared versus local picking, moving versus opening a page); auxiliary icon-only buttons need both title and aria-label. Room termination retains its confirmation dialog.
 - SelectedVideoPreview composes installed Card/Badge primitives into a non-interactive video preview with a poster (fallback on absence/load failure), duration and separate shared-selection/local-binding labels. It is not a second player and exposes no playback controls; the group roster remains authoritative for group readiness.

@@ -162,6 +162,15 @@ export function forwardPlaybackEvent(sender: chrome.runtime.MessageSender, messa
 export function refreshSource(tabId: number) {
   return serial(async () => { await load(); if (viewer?.tabId === tabId) await reconcile(); return viewer?.tabId === tabId ? viewer : null })
 }
+export function refreshManagedSource() {
+  return serial(async () => {
+    await load()
+    if (!viewer || viewer.closed || !state?.ready || viewer.roomId !== state.roomId) return
+    await reconcile()
+    // Restart top-frame polling if a previous worker/message interruption stopped it.
+    await chrome.tabs.sendMessage(viewer.tabId, { channel: CHANNEL, to: "content", type: "source-watch" }, { frameId: 0 }).catch(() => {})
+  })
+}
 export function bindSourceTab(tabId: number, roomId: string, onlyIfMatching = false) {
   return serial(async () => {
     await load()

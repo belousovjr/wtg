@@ -4,7 +4,7 @@ import { decodeInvitation } from "./lib/room-protocol"
 import { sourceRevision, pickedSource } from "./lib/source"
 import type { TabVideos } from "./lib/video"
 import { handleBindingMessage } from "./lib/bindings"
-import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, expectLocalSourcePick } from "./lib/source-viewer"
+import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, refreshManagedSource, expectLocalSourcePick } from "./lib/source-viewer"
 
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
@@ -73,7 +73,7 @@ async function recoverSession() {
 }
 chrome.runtime.onStartup.addListener(() => { void recoverSession().catch(() => {}) })
 chrome.runtime.onInstalled.addListener(() => { void recoverSession().catch(() => {}) })
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === "wtg-recover") void recoverSession().catch(() => {}) })
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === "wtg-recover") void recoverSession().then(() => refreshManagedSource()).catch(() => {}) })
 void chrome.alarms.create("wtg-recover", { periodInMinutes: 1 })
 void recoverSession().catch(() => {})
 chrome.tabs.onRemoved.addListener(tabId => { void closeSource(tabId).then(() => autoBindActiveSource()).catch(() => {}) })
