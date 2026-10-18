@@ -121,8 +121,9 @@ test("invitation uses a shadcn Input and native submit form instead of a multili
 
 test("selected video preview distinguishes shared choice from local binding without playback controls", () => {
   const { SelectedVideoPreview } = load("components/video-picker.tsx")
-  const pending = renderToStaticMarkup(React.createElement(SelectedVideoPreview, { bound: false, duration: 90 }))
-  assert.match(pending, /Выбрано для группы/)
+  const pending = renderToStaticMarkup(React.createElement(SelectedVideoPreview, { bound: false, duration: 90, selector: "#player > video" }))
+  assert.match(pending, /#player &gt; video/)
+  assert.doesNotMatch(pending, /Выбрано для группы/)
   assert.match(pending, /Ищем плеер…/)
   assert.match(pending, /1:30/)
   const ready = renderToStaticMarkup(React.createElement(SelectedVideoPreview, { bound: true, duration: 90, video: { label: "Видео 1", poster: "https://example.com/poster.jpg", readyState: 4, paused: true } }))

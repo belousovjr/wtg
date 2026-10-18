@@ -9,16 +9,16 @@ import { Alert, AlertDescription } from "./ui/alert"
 import { Card, CardContent } from "./ui/card"
 import { Badge } from "./ui/badge"
 import { Spinner } from "./ui/spinner"
-import { MonitorPlay, TvMinimalPlay, Check, Link2, Pause, Play } from "lucide-react"
+import { MonitorPlay, TvMinimalPlay, Link2, Pause, Play } from "lucide-react"
 
-export function SelectedVideoPreview({ video, bound, duration }: { video?: VideoInfo; bound: boolean; duration: number | null }) {
+export function SelectedVideoPreview({ video, bound, duration, selector }: { video?: VideoInfo; bound: boolean; duration: number | null; selector?: string }) {
   const [posterFailed, setPosterFailed] = useState(false)
   useEffect(() => setPosterFailed(false), [video?.poster])
   const time = duration === null ? null : `${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, "0")}`
   return <Card size="sm" className="gap-0 overflow-hidden py-0" aria-label="Выбранное видео">
     <div className="relative flex h-28 items-center justify-center overflow-hidden bg-secondary">
       {video?.poster && !posterFailed ? <img src={video.poster} alt="Превью выбранного видео" referrerPolicy="no-referrer" onError={() => setPosterFailed(true)} className="absolute inset-0 size-full object-cover" /> : <TvMinimalPlay className="size-10 text-primary/60" aria-hidden="true" />}
-      <Badge className="absolute left-2 top-2 gap-1" variant="secondary"><Check className="size-3" />Выбрано для группы</Badge>
+      {selector && <Badge className="absolute left-2 top-2 max-w-[calc(100%-1rem)] min-w-0" variant="secondary" title={selector}><code className="truncate font-mono text-[10px] font-normal">{selector}</code></Badge>}
       {time && <Badge className="absolute bottom-2 right-2 bg-background/90 text-foreground" variant="secondary">{time}</Badge>}
     </div>
     <CardContent className="space-y-2 py-3">
@@ -79,7 +79,7 @@ export function VideoPicker({ room, actionContainer, hidePreview = false }: { ro
   const action = <Button size="sm" title="Выбрать плеер и страницу для всей группы" disabled={busy || !room.ready} onClick={() => void pick()}><MonitorPlay />{room.shared.video ? "Сменить плеер для всех" : "Выбрать плеер для всех"}</Button>
   return <section className="space-y-3">
     {actionContainer ? createPortal(action, actionContainer) : actionContainer === undefined ? action : null}
-    {!hidePreview && (room.shared.video ? <SelectedVideoPreview video={current} bound={!!bound} duration={current?.duration ?? room.shared.video.duration ?? null} /> : <p className="text-xs text-muted-foreground">Общий плеер ещё не выбран.</p>)}
+    {!hidePreview && (room.shared.video ? <SelectedVideoPreview video={current} bound={!!bound} selector={room.shared.video.selector} duration={current?.duration ?? room.shared.video.duration ?? null} /> : <p className="text-xs text-muted-foreground">Общий плеер ещё не выбран.</p>)}
     {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
   </section>
 }
