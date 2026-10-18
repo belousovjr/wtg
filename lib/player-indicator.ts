@@ -37,7 +37,7 @@ export class PlayerIndicator {
       this.adminNode = document.createElement("div")
       this.adminNode.setAttribute("role", "status")
       this.adminNode.setAttribute("aria-live", "polite")
-      this.adminNode.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:none;height:28px;padding:0 9px;border-radius:7px;background:rgba(20,24,30,.72);color:rgba(255,255,255,.82);font:500 11px/28px system-ui;font-variant-numeric:tabular-nums;box-sizing:border-box;backdrop-filter:blur(6px)"
+      this.adminNode.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:none;height:28px;padding:0 9px;border-radius:7px;background:rgba(20,24,30,.72);color:#ea4c89;font:500 11px/28px system-ui;font-variant-numeric:tabular-nums;box-sizing:border-box;backdrop-filter:blur(6px)"
     }
     const host = document.fullscreenElement && !(document.fullscreenElement instanceof HTMLVideoElement) ? document.fullscreenElement : document.documentElement
     if (this.adminNode.parentElement !== host) host.append(this.adminNode)
@@ -80,7 +80,7 @@ export class PlayerIndicator {
       this.node = document.createElement("div")
       this.node.setAttribute("role", "status")
       this.node.setAttribute("aria-live", "polite")
-      this.node.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:none;max-width:240px;background-color:rgba(20,24,30,.72);color:rgba(255,255,255,.85);font:500 11px/1.4 system-ui;box-sizing:border-box;backdrop-filter:blur(6px);background-repeat:no-repeat;background-position:center;background-size:14px"
+      this.node.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:none;max-width:240px;background-color:rgba(20,24,30,.72);color:#ea4c89;font:500 11px/1.4 system-ui;box-sizing:border-box;backdrop-filter:blur(6px);background-repeat:no-repeat;background-position:center;background-size:14px"
     }
     const host = document.fullscreenElement && !(document.fullscreenElement instanceof HTMLVideoElement) ? document.fullscreenElement : document.documentElement
     if (this.node.parentElement !== host) host.append(this.node)
@@ -104,7 +104,7 @@ export class PlayerIndicator {
     const visibleText = actionable ? text.replace("▶ ", "").replace(" на плеере", "") : ""
     if (this.node.textContent !== visibleText) this.node.textContent = visibleText
     const icon = ready ? '<path d="m5 12 4 4L19 6"/>' : '<path d="M20 12a8 8 0 1 1-8-8"/>'
-    this.node.style.backgroundImage = actionable ? "none" : `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${ready ? "#a7d8bd" : "#d1d5db"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`)}")`
+    this.node.style.backgroundImage = actionable ? "none" : `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ea4c89" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`)}")`
     if (this.adminNode) this.adminNode.style.top = `${Math.max(10, rect.top + (actionable ? 46 : 10))}px`
     this.node.setAttribute("aria-label", ready ? "Группа готова" : text)
     this.node.title = ready ? "Готово" : actionable ? text : "Синхронизация"
@@ -119,6 +119,6 @@ export class PlayerIndicator {
       if (!this.spinner && this.node.animate && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)
         this.spinner = this.node.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 1000, iterations: Infinity })
     } else { this.spinner?.cancel(); this.spinner = undefined }
-    this.node.style.color = "rgba(255,255,255,.85)"
+    this.node.style.color = "#ea4c89"
   }
 }
