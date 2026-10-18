@@ -87,6 +87,20 @@ void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "bin
   restore()
 }).catch(() => {})
 let picking = false
+let pickingCursorStyles: HTMLStyleElement[] = []
+function setPickingCursor() {
+  const roots = new Set<Document | ShadowRoot>([document])
+  for (const video of videosIn()) {
+    let root = video.getRootNode()
+    while (root instanceof ShadowRoot) { roots.add(root); root = root.host.getRootNode() }
+  }
+  for (const root of roots) {
+    const style = document.createElement("style")
+    style.textContent = ":host, :host *, html, body, * { cursor: crosshair !important; }"
+    ;(root instanceof Document ? root.documentElement : root).append(style)
+    pickingCursorStyles.push(style)
+  }
+}
 let highlighted: HTMLVideoElement | undefined
 let overlay: HTMLDivElement | undefined
 let animation = 0
@@ -116,6 +130,8 @@ function highlight(video?: HTMLVideoElement) {
 }
 function stopPicking() {
   picking = false
+  for (const style of pickingCursorStyles) style.remove()
+  pickingCursorStyles = []
   window.removeEventListener("pointermove", onMove, true)
   window.removeEventListener("click", onClick, true)
   window.removeEventListener("keydown", onKey, true)
@@ -234,6 +250,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const action = message.action
       if (action.kind === "pick" && !picking) {
         picking = true
+        setPickingCursor()
         window.addEventListener("pointermove", onMove, true)
         window.addEventListener("click", onClick, true)
         window.addEventListener("keydown", onKey, true)
