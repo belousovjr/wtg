@@ -10,10 +10,80 @@ function load(name, clock, imports = {}, extra = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 }
   }).outputText
   const exports = {}
-  vm.runInNewContext(code, { exports, require: id => imports[id], performance: { timeOrigin: clock.origin || 0, now: () => clock.time },
+  vm.runInNewContext(code, { exports, require: id => imports[id] || (id === "./player-indicator" ? { PlayerIndicator: class { begin() {} clear() {} update() {} } } : undefined), performance: { timeOrigin: clock.origin || 0, now: () => clock.time },
     crypto, structuredClone, setInterval: () => 1, clearInterval: () => {}, setTimeout, clearTimeout, ...extra })
   return exports
 }
+test("indicator waits for every participant's current acknowledgement and scheduled time", () => {
+  const clock = { time: 1000 }, pb = load("playback", clock)
+  const { indicatorState } = load("player-indicator", clock, { "./playback": pb })
+  const state = { epoch: "e", command: { sequence: 3, executeAt: 1500 }, preparation: null, clock: { offset: 0 }, participantIds: ["a", "b"], players: {} }
+  assert.equal(indicatorState(state, 1).ready, false)
+  clock.time = 1500
+  state.players.a = { epoch: "e", revision: 1, sequence: 3, status: "ready" }
+  state.players.b = { epoch: "e", revision: 1, sequence: 2, status: "ready" }
+  assert.equal(indicatorState(state, 1).ready, false)
+  state.players.b.sequence = 3
+  assert.equal(indicatorState(state, 1).ready, true)
+  state.players.b.status = "blocked"
+  assert.equal(indicatorState(state, 1).ready, false)
+  assert.match(indicatorState(state, 1).text, /ручного запуска/)
+  state.selfId = "b"
+  assert.match(indicatorState(state, 1, true).text, /Нажми Play/)
+  assert.equal(indicatorState(state, 1, true).urgent, true)
+  state.preparation = { id: "new" }
+  assert.equal(indicatorState(state, 1).ready, false)
+})
+
+test("player marker stays visible through loading and acknowledgement, then dismisses after stable readiness", () => {
+  const clock = { time: 1000 }, pb = load("playback", clock), nodes = []
+  const host = { append(node) { node.parentElement = this; nodes.push(node) } }
+  const document = { documentElement: host, fullscreenElement: null, createElement: () => ({ style: {}, setAttribute() {}, remove() { this.removed = true } }) }
+  const { PlayerIndicator } = load("player-indicator", clock, { "./playback": pb }, { document, window: { innerWidth: 1000 } })
+  const marker = new PlayerIndicator(), video = { isConnected: true, seeking: false, readyState: 4, getBoundingClientRect: () => ({ right: 800, top: 30, width: 800, height: 450 }) }
+  const state = { epoch: "e", command: { sequence: 1, commandId: "old", executeAt: 0 }, preparation: null, clock: { offset: 0 }, participantIds: ["a"], players: { a: { epoch: "e", revision: 0, sequence: 1, status: "ready" } } }
+  marker.update(video, { ...state, command: null, clock: null }, 0, false)
+  assert.equal(nodes.length, 0) // No startup spinner before a real playback operation.
+  marker.update(video, { ...state, command: null, clock: null }, 0, false, true)
+  assert.match(nodes[0].textContent, /Нажми Play/)
+  marker.clear(); nodes.length = 0
+  marker.begin("new")
+  marker.update(video, state, 0, true)
+  const node = nodes[0]
+  clock.time += 5000
+  marker.update(video, state, 0, false)
+  assert.equal(node.removed, undefined) // Old all-ready is not the user's acknowledgement.
+  assert.equal(node.textContent, "◌")
+  state.command = { sequence: 2, commandId: "new", executeAt: 0 }
+  state.players.a.sequence = 2
+  video.readyState = 1
+  marker.update(video, state, 0, false)
+  assert.equal(node.textContent, "◌")
+  video.paused = true
+  marker.update(video, state, 0, false)
+  assert.equal(node.textContent, "◌")
+  assert.doesNotMatch(node.textContent, /Буферизация/)
+  marker.update(video, state, 0, false, false, true)
+  assert.equal(node.textContent, "◌")
+  video.paused = false
+  marker.update(video, state, 0, true, true)
+  assert.match(node.textContent, /Нажми Play/)
+  assert.doesNotMatch(node.textContent, /Буферизация/)
+  video.readyState = 4
+  marker.update(video, state, 0, false)
+  assert.equal(node.textContent, "✓")
+  clock.time += 1201; marker.update(video, state, 0, false)
+  assert.equal(node.removed, true)
+  marker.update(video, { ...state, adminSync: { synchronized: 1, total: 2 } }, 0, false)
+  const adminNode = nodes.find(item => item.textContent?.includes("Синхронизированы 1 / 2"))
+  assert.match(adminNode.textContent, /Синхронизированы 1 \/ 2/)
+  marker.update(video, { ...state, adminSync: { synchronized: 2, total: 2 } }, 0, false)
+  assert.equal(adminNode.removed, true)
+  const count = nodes.length
+  marker.update(video, state, 0, false) // Guest projection contains no admin summary.
+  assert.equal(nodes.length, count)
+})
+
 test("clock estimator accounts for clock offset and remote processing; timelines compensate late execution", () => {
   const pb = load("playback", { time: 0 })
   const estimate = pb.clockSample(1000, 1520, 1530, 1050)
@@ -369,10 +439,10 @@ test("continuous correction changes rate then restores it, seeks large drift wit
   assert.equal(tick, undefined)
 })
 
-test("autoplay denial reports blocked and unlock calls play directly without broadcasting a new user command", async () => {
+test("autoplay denial is cleared by native Play without an extra button or shared restart", async () => {
   const clock = { time: 1000 }, tasks = [], panels = [], events = []
   class Video extends EventTarget {
-    isConnected = true; readyState = 4; duration = 100; seeking = false; paused = true; currentTime = 0; playbackRate = 1; blocked = true
+    isConnected = true; readyState = 0; duration = 100; seeking = false; paused = true; currentTime = 0; playbackRate = 1; blocked = true
     seekable = { length: 1, start: () => 0, end: () => 100 }
     pause() { if (!this.paused) { this.paused = true; this.dispatchEvent(new Event("pause")) } }
     play() {
@@ -396,9 +466,12 @@ test("autoplay denial reports blocked and unlock calls play directly without bro
   tasks.pop()()
   await Promise.resolve(); await Promise.resolve()
   assert.equal(events.at(-1).report.status, "blocked")
-  assert.equal(panels.length, 1)
+  assert.equal(panels.length, 0)
+  video.readyState = 4
   video.blocked = false
-  panels[0].children[0].onclick()
+  await video.play() // Native player invokes play within the user's gesture.
+  assert.equal(events.at(-1).report.status, "loading")
+  tasks.pop()()
   await Promise.resolve(); await Promise.resolve()
   assert.equal(video.paused, false)
   assert.equal(events.at(-1).report.status, "ready")

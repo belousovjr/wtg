@@ -5,7 +5,7 @@ export type Preparation = { epoch: string; revision: number; id: string; command
 export type PlayerReport = { epoch: string; revision: number; preparationId?: string; sequence?: number; status: "ready" | "loading" | "blocked" | "missing" | "error"; detail?: string; lateness?: number }
 export type ClockEstimate = { offset: number; rtt: number; uncertainty: number }
 export type PlaybackWire = { epoch: string; sequence: number; preparation: Preparation | null; command: Commit | null; players: Record<string, PlayerReport> }
-export type PlaybackLocal = PlaybackWire & { clock: ClockEstimate | null }
+export type PlaybackLocal = PlaybackWire & { clock: ClockEstimate | null; participantIds?: string[]; selfId?: string; adminSync?: { synchronized: number; total: number } }
 const finite = (v: unknown) => typeof v === "number" && Number.isFinite(v)
 const revision = (v: unknown) => Number.isSafeInteger(v) && Number(v) >= 0
 export function validPlaybackRequest(v: unknown): v is PlaybackRequest {
@@ -80,7 +80,7 @@ export class PlaybackSession {
   }
   dispose() { this.disposed = true; clearInterval(this.timer) }
   wire(): PlaybackWire { return structuredClone({ epoch: this.epoch, sequence: this.sequence, preparation: this.preparation, command: this.command, players: this.players }) }
-  local(): PlaybackLocal { return { ...this.wire(), clock: this.clock } }
+  local(): PlaybackLocal { return { ...this.wire(), clock: this.clock, participantIds: [...this.options.participants()], selfId: this.options.selfId } }
   private emit() { if (!this.disposed) this.options.changed(this.local()) }
   resetSource() {
     this.sourceRevision = this.options.revision()

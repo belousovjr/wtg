@@ -24,9 +24,11 @@ export function groupPlayerStatus(room: RoomView) {
       if (report.status === "loading") { ready = false; text = "Плеер готовится к просмотру" }
       if (report.status === "error") { ready = false; text = report.detail || "Ошибка плеера" }
     }
-    return { id, bound, ready, text }
+    const synchronized = !!(ready && currentReport && report.status === "ready" && room.sync?.command && !room.sync.preparation)
+    return { id, bound, ready, synchronized, text }
   })
   const bound = members.filter(m => m.bound).length
   const allReady = !!room.shared.video && room.ready && members.length > 0 && members.every(m => m.ready)
-  return { members, bound, total: members.length, allReady }
+  const synchronized = members.filter(member => member.synchronized).length
+  return { members, bound, synchronized, total: members.length, allReady }
 }

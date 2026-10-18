@@ -72,7 +72,7 @@ the player positions and waits up to five seconds before scheduling a common
 future start; pause cancels preparation immediately. Clock offset/RTT estimates
 are under popup diagnostics; readiness/errors share the single participant list.
 
-If Chrome blocks autoplay, click “Разрешить воспроизведение” on the video page.
+If Chrome blocks autoplay, press Play in the native video player as prompted.
 This unlocks only the local player and catches it up with the shared timeline.
 Finite-duration HTML video and 0.25–4x speed are supported in this stage. Live
 streams are not supported. Continuous correction uses small speed adjustments

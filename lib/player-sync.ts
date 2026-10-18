@@ -1,7 +1,13 @@
 import { driftCorrection, now, positionAt, validCommit, validPreparation, type PlaybackLocal, type PlaybackRequest, type PlayerReport } from "./playback"
+import { PlayerIndicator } from "./player-indicator"
 
 type EventMessage = { kind: "request"; request: PlaybackRequest } | { kind: "report"; report: PlayerReport }
 export class PlayerSync {
+  private indicator = new PlayerIndicator()
+  private playPending = false
+  private renderIndicator() {
+    if (this.context) this.indicator.update(this.video, this.context.playback, this.context.revision, this.userSeeking || !!this.pendingSeekId || this.pendingManual, this.autoplayBlocked, this.playPending || !!this.scheduled)
+  }
   private context?: { roomId: string; revision: number; playback: PlaybackLocal }
   private video?: HTMLVideoElement
   private timer?: ReturnType<typeof setTimeout>
@@ -14,7 +20,7 @@ export class PlayerSync {
   private expectedPosition = 0
   private remoteSeekPending = false
   private expectedRate = 1
-  private overlay?: HTMLDivElement
+  private autoplayBlocked = false
   private lastReport = ""
   private correctionTimer?: ReturnType<typeof setInterval>
   private pendingManual = false
@@ -26,6 +32,7 @@ export class PlayerSync {
   bind() {
     const video = this.getVideo()
     if (video === this.video) return
+    this.playPending = false
     clearTimeout(this.seekTimer)
     clearTimeout(this.pauseTimer)
     this.pendingManual = false; this.userSeeking = false; this.pendingSeekId = undefined
@@ -48,30 +55,37 @@ export class PlayerSync {
         preparationCommandId: playback?.preparation?.commandId, pendingSeekId: this.pendingSeekId, userSeeking: this.userSeeking })
     }
     if (!playback) {
+      this.playPending = false
+      this.indicator.clear()
       this.pendingSeekId = undefined; this.userSeeking = false; this.pendingManual = false
       this.remoteSeekPending = false
       clearInterval(this.correctionTimer); this.correctionTimer = undefined
       this.context = undefined; clearTimeout(this.timer); clearTimeout(this.seekTimer)
       clearTimeout(this.pauseTimer)
-      this.expectedPaused = true; this.video?.pause(); this.overlay?.remove(); this.overlay = undefined
+      this.expectedPaused = true; this.video?.pause(); this.autoplayBlocked = false
       this.applied = ""; this.scheduled = ""; this.prepared = ""; this.lastReport = ""
       return
     }
-    if (!this.correctionTimer) this.correctionTimer = setInterval(() => this.correctDrift(), 250)
+    if (!this.correctionTimer) this.correctionTimer = setInterval(() => { this.correctDrift(); this.renderIndicator() }, 250)
     if (this.context?.playback.epoch === playback.epoch && this.context.revision === revision && playback.command && this.context.playback.command && playback.command.sequence < this.context.playback.command.sequence) return
     if (playback.command && !validCommit(playback.command) || playback.preparation && !validPreparation(playback.preparation)) return
     if (this.context?.roomId !== roomId || this.context.revision !== revision || this.context.playback.epoch !== playback.epoch) {
+      this.playPending = false
       clearTimeout(this.timer); clearTimeout(this.seekTimer)
       clearTimeout(this.pauseTimer)
       this.applied = ""; this.scheduled = ""; this.prepared = ""; this.lastReport = ""
       this.expectedPaused = true
+      this.indicator.clear()
       this.pendingSeekId = undefined; this.userSeeking = false; this.pendingManual = false
-      this.overlay?.remove(); this.overlay = undefined
+      this.autoplayBlocked = false
     }
-    if (this.context?.playback.command?.sequence !== playback.command?.sequence || this.context?.playback.preparation?.id !== playback.preparation?.id)
+    if (this.context?.playback.command?.sequence !== playback.command?.sequence || this.context?.playback.preparation?.id !== playback.preparation?.id) {
+      this.playPending = false
       this.pendingManual = false
+    }
     this.context = { roomId, revision, playback }
     this.bind()
+    this.renderIndicator()
     if (this.pendingSeekId && (playback.preparation?.commandId === this.pendingSeekId || playback.command?.commandId === this.pendingSeekId)) {
       this.pendingSeekId = undefined; this.pendingManual = false
     }
@@ -94,6 +108,7 @@ export class PlayerSync {
     const command = playback.command
     if (!command) { this.expectedPaused = true; video.pause(); return }
     if (command.revision !== revision) return
+    if (this.playPending || this.autoplayBlocked && !command.paused) return
     const id = `${command.epoch}:${command.sequence}`
     if (this.applied === id || this.scheduled === id) return
     if (!playback.clock) { this.report("loading", "Согласуем часы"); return }
@@ -109,24 +124,32 @@ export class PlayerSync {
         this.timer = setTimeout(execute, command.executeAt - coordinatorTime)
         return
       }
-      if (!this.seek(positionAt(command, coordinatorTime), command.rate)) {
+      const aligned = this.seek(positionAt(command, coordinatorTime), command.rate)
+      if (!aligned) {
         console.info("[WTG playback] Запуск отложен: позиция недоступна", { sequence: command.sequence, position: video.currentTime, readyState: video.readyState, seeking: video.seeking })
-        return
+        if (command.paused) return
       }
       this.expectedPaused = command.paused
-      this.applied = id
+      this.applied = aligned ? id : ""
       const late = Math.max(0, coordinatorTime - command.executeAt)
-      if (command.paused) { video.pause(); this.overlay?.remove(); this.overlay = undefined; this.report("ready", undefined, late) }
+      if (command.paused) { video.pause(); this.autoplayBlocked = false; this.report("ready", undefined, late) }
       else {
+        this.playPending = true
         console.info("[WTG playback] Вызываем play()", { sequence: command.sequence, position: video.currentTime, readyState: video.readyState, seeking: video.seeking })
         void video.play().then(() => {
+        if (this.context?.playback.command?.sequence === command.sequence && this.context.playback.epoch === command.epoch) this.playPending = false
         console.info("[WTG playback] play() выполнен", { sequence: command.sequence, paused: video.paused, position: video.currentTime })
-        if (this.context?.playback.command?.sequence === command.sequence && this.context.playback.epoch === command.epoch && !this.context.playback.preparation) this.report("ready", undefined, late)
+        if (this.context?.playback.command?.sequence === command.sequence && this.context.playback.epoch === command.epoch && !this.context.playback.preparation) {
+          this.report(aligned ? "ready" : "loading", aligned ? undefined : "Ждём metadata и позицию просмотра", late)
+          this.renderIndicator()
+        }
       }, error => {
+        if (this.context?.playback.command?.sequence === command.sequence && this.context.playback.epoch === command.epoch) this.playPending = false
         console.warn("[WTG playback] play() отклонён", { sequence: command.sequence, name: error?.name })
         if (this.context?.playback.command?.sequence !== command.sequence || this.context.playback.epoch !== command.epoch || this.context.playback.preparation) return
-        this.report(error?.name === "NotAllowedError" ? "blocked" : "error", error?.name === "NotAllowedError" ? "Нажми «Разрешить воспроизведение» на странице" : "Браузер не смог запустить видео")
+        this.report(error?.name === "NotAllowedError" ? "blocked" : "error", error?.name === "NotAllowedError" ? "Нажми Play на плеере" : "Браузер не смог запустить видео")
         if (error?.name === "NotAllowedError") this.showUnlock()
+        this.renderIndicator()
       })
       }
     }
@@ -137,6 +160,7 @@ export class PlayerSync {
     if (!c || !video?.isConnected || !command || !c.playback.clock || c.playback.preparation ||
       command.revision !== c.revision || this.pendingManual || this.pendingSeekId || this.userSeeking || video.seeking ||
       this.applied !== `${command.epoch}:${command.sequence}` || now() < this.correctionUntil) return
+    if (this.autoplayBlocked && !command.paused) return
     if (video.readyState < 2) { this.report("loading", "Буферизация · догоним после загрузки"); return }
     if (!Number.isFinite(video.duration) || video.duration <= 0) return
     const target = Math.min(positionAt(command, now() + c.playback.clock.offset), Math.max(0, video.duration - 0.05))
@@ -155,7 +179,8 @@ export class PlayerSync {
       }
     }
     console.debug("[WTG sync] Коррекция таймлайна", { driftMs: Math.round(error * 1000), rate: video.playbackRate, seek: correction.seek })
-    this.report("ready")
+    const converging = Math.abs(error) > Math.max(0.12, Math.min(0.3, c.playback.clock.uncertainty / 1000))
+    this.report(converging ? "loading" : "ready", converging ? "Выравниваем позицию просмотра" : undefined)
   }
   private seek(position: number, rate: number) {
     const video = this.video!
@@ -193,12 +218,24 @@ export class PlayerSync {
         if (this.userSeeking) this.remoteSeekPending = false
       }
       if (this.userSeeking) {
+        this.indicator.begin()
+        this.renderIndicator()
         clearTimeout(this.pauseTimer)
         clearTimeout(this.timer); this.scheduled = ""
       }
       return
     }
     if (!c || !video || event.target !== video) return
+    if (event.type === "play" && this.autoplayBlocked && !video.paused) {
+      this.autoplayBlocked = false
+      this.expectedPaused = false
+      this.applied = ""
+      this.indicator.begin(c.playback.command?.commandId)
+      this.report("loading", "Подключаемся к общему просмотру")
+      this.renderIndicator()
+      this.update(c.roomId, c.revision, c.playback)
+      return
+    }
     if (event.type === "canplay" || event.type === "loadedmetadata") { this.update(c.roomId, c.revision, c.playback); return }
     if (event.type === "play" || event.type === "pause") {
       console.info("[WTG playback] Событие плеера", { type: event.type, paused: video.paused, expectedPaused: this.expectedPaused,
@@ -219,6 +256,8 @@ export class PlayerSync {
     this.pendingManual = true
     const request: PlaybackRequest = { epoch: c.playback.epoch, commandId: crypto.randomUUID(), revision: c.revision, action: event.type === "play" ? "play" : event.type === "pause" ? "pause" : event.type === "seeked" ? "seek" : "rate", position: video.currentTime, rate: event.type === "ratechange" ? video.playbackRate : c.playback.command?.rate ?? video.playbackRate }
     if (event.type === "seeked") this.pendingSeekId = request.commandId
+    this.indicator.begin(request.commandId)
+    this.renderIndicator()
     if (event.type === "play") { this.expectedPaused = true; video.pause() }
     const dispatch = () => {
       const current = this.context
@@ -243,19 +282,6 @@ export class PlayerSync {
     } else dispatch()
   }
   private showUnlock() {
-    if (this.overlay) return
-    const panel = document.createElement("div")
-    panel.style.cssText = "position:fixed;bottom:24px;right:24px;z-index:2147483647;padding:16px;background:#fff;color:#111;border:2px solid #7c3aed;border-radius:8px;font:14px system-ui"
-    const button = document.createElement("button")
-    button.textContent = "Разрешить воспроизведение"
-    button.onclick = () => {
-      const c = this.context, command = c?.playback.command
-      if (!c?.playback.clock || !command || command.paused || c.playback.preparation || !this.video) return
-      if (!this.seek(positionAt(command, now() + c.playback.clock.offset), command.rate)) return
-      this.expectedPaused = false
-      // Call play directly inside the user gesture, not after a runtime round-trip.
-      void this.video.play().then(() => { panel.remove(); this.overlay = undefined; this.report("ready") }, () => this.report("blocked", "Браузер всё ещё запрещает запуск"))
-    }
-    panel.append(button); document.documentElement.append(panel); this.overlay = panel
+    this.autoplayBlocked = true
   }
 }

@@ -33,12 +33,24 @@ test("group status distinguishes shared choice from confirmed bindings, stale re
   assert.equal(groupPlayerStatus(room).allReady, false)
   room.sync.preparation = null
   room.sync.players.guest = { epoch: "epoch", sequence: 1, revision: 1, status: "blocked" }
+  room.sync.players.self = { epoch: "epoch", sequence: 1, revision: 1, status: "ready" }
+  assert.equal(groupPlayerStatus(room).synchronized, 1)
   assert.equal(groupPlayerStatus(room).bound, 2)
   assert.equal(groupPlayerStatus(room).allReady, false)
   assert.match(groupPlayerStatus(room).members[1].text, /разреши запуск/)
   room.sync.players.guest.status = "missing"
   assert.equal(groupPlayerStatus(room).bound, 1)
+  room.sync.players.guest.status = "ready"
+  assert.equal(groupPlayerStatus(room).synchronized, 2)
+  room.sourceReadiness.guest.status = "wrong-page"
+  assert.equal(groupPlayerStatus(room).synchronized, 1)
+  room.sourceReadiness.guest.status = "ready"
+  room.sync.players.guest.sequence = 0
+  assert.equal(groupPlayerStatus(room).synchronized, 1)
+  room.sync.preparation = { id: "new" }
+  assert.equal(groupPlayerStatus(room).synchronized, 0)
   room.ready = false
+  assert.equal(groupPlayerStatus(room).synchronized, 0)
   assert.equal(groupPlayerStatus(room).bound, 0)
   assert.equal(groupPlayerStatus(room).allReady, false)
 })
