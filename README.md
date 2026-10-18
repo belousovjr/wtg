@@ -2,6 +2,22 @@ This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with
 
 ## Getting Started
 
+### Popup UI
+
+The popup uses official shadcn/ui Radix Nova components (CLI 4.22), Tailwind CSS 4
+and React 19. Components and the neutral theme were imported with the official CLI;
+do not hand-edit the generated primitives in `components/ui`.
+
+Install dependencies with `yarn install`. Add further primitives with
+`yarn shadcn add <component>`. `components.json` defines the registry style and aliases.
+Only diagnostics collapse; the end-room confirmation uses shadcn AlertDialog.
+
+`npm run build` and `npm run package` generate `style.generated.css` before Plasmo.
+`npm run dev` starts both the Tailwind watcher and Plasmo; restart any older dev
+process after upgrading. The generated CSS is ignored by Git. The official theme
+and Tailwind source directives live in `style.css` and are used only by the popup,
+not injected into visited pages.
+
 ### Rooms (prototype)
 
 Rooms use Trystero 0.26.0 with public Nostr signaling. Select a video, create a

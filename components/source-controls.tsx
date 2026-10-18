@@ -2,6 +2,11 @@ import { useEffect, useState } from "react"
 import { CHANNEL } from "../lib/messages"
 import { decodeInvitation, type RoomView } from "../lib/room-protocol"
 import { samePageLocation } from "../lib/source"
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "./ui/card"
+import { Button } from "./ui/button"
+import { Alert, AlertDescription } from "./ui/alert"
+import { Spinner } from "./ui/spinner"
+import { ExternalLink, ArrowRightLeft, Globe } from "lucide-react"
 export function SourceControls({ room }: { room: RoomView }) {
   const [tabError, setTabError] = useState("")
   const [tabBusy, setTabBusy] = useState(false)
@@ -34,20 +39,20 @@ export function SourceControls({ room }: { room: RoomView }) {
     } catch (error) { setTabError(error instanceof Error ? error.message : "Вкладка просмотра недоступна") }
     finally { setTabBusy(false) }
   }
-  return <section>
-    <h4>Просмотр</h4>
-    {room.shared.url && <p style={{ overflowWrap: "anywhere" }}>{room.shared.url}</p>}
-    {!room.shared.url && <p>Открой нужную страницу и выбери плеер кнопкой «Выбрать для всех» — его URL передастся вместе с видео.</p>}
+  return <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Globe className="size-4 text-muted-foreground" />Просмотр</CardTitle>
+    <CardDescription className="break-all text-xs">{room.shared.url || "Выбери плеер ниже — страница передастся вместе с видео."}</CardDescription></CardHeader>
+    <CardContent className="space-y-3">
     {room.shared.url && <>
-      {!room.shared.video && <p>Страница задана. Теперь выбери видео для группы в списке ниже.</p>}
-      {room.sourceReadiness[room.selfId]?.status === "unavailable" && <p>Вкладка просмотра не привязана, закрыта или плеер недоступен.</p>}
-      {!isViewingTab && hasViewingTab && <button disabled={tabBusy} onClick={() => void tabAction("source-focus")}>К вкладке просмотра</button>}
-      {wrongUrl && <button disabled={tabBusy} onClick={() => void tabAction("source-open-url")}>Открыть страницу просмотра</button>}
-      {!hasViewingTab ? <button disabled={tabBusy} onClick={() => void tabAction("source-attach")}>Смотреть в этой вкладке</button> : !isViewingTab && <div>
-        <p>Текущая вкладка станет вкладкой просмотра и откроет общий URL.</p>
-        <button disabled={tabBusy} onClick={() => void tabAction("source-attach")}>Перенести в эту вкладку</button>
+      {!room.shared.video && <p className="text-xs text-muted-foreground">Страница задана. Теперь выбери видео для группы ниже.</p>}
+      {room.sourceReadiness[room.selfId]?.status === "unavailable" && <Alert><AlertDescription>Вкладка просмотра не привязана, закрыта или плеер недоступен.</AlertDescription></Alert>}
+      {!isViewingTab && hasViewingTab && <Button variant="outline" size="sm" disabled={tabBusy} onClick={() => void tabAction("source-focus")}><ExternalLink />К вкладке просмотра</Button>}
+      {wrongUrl && <Button size="sm" disabled={tabBusy} onClick={() => void tabAction("source-open-url")}>{tabBusy ? <Spinner /> : <ExternalLink />}Открыть страницу просмотра</Button>}
+      {!hasViewingTab ? <Button size="sm" disabled={tabBusy} onClick={() => void tabAction("source-attach")}>Смотреть в этой вкладке</Button> : !isViewingTab && <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">Текущая вкладка станет вкладкой просмотра и откроет общий URL.</p>
+        <Button variant="outline" size="sm" disabled={tabBusy} onClick={() => void tabAction("source-attach")}><ArrowRightLeft />Перенести в эту вкладку</Button>
       </div>}
     </>}
-    {tabError && <p role="alert">{tabError}</p>}
-  </section>
+    {tabError && <Alert variant="destructive"><AlertDescription>{tabError}</AlertDescription></Alert>}
+    </CardContent>
+  </Card>
 }

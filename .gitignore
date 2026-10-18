@@ -4,6 +4,7 @@
 # dependencies
 /node_modules
 /.pnp
+/style.generated.css
 .pnp.js
 
 # testing

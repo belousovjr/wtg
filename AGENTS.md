@@ -20,7 +20,9 @@
 
 ## Architecture
 
-- Chrome MV3, Plasmo 0.90.5, React 18, TypeScript. Chrome 116+ is required for runtime.getContexts.
+- Chrome MV3, Plasmo 0.90.5, React 19.3, TypeScript. Chrome 116+ is required for runtime.getContexts.
+- Popup uses official shadcn CLI-installed Radix Nova components under components/ui, Tailwind CSS 4, Lucide and the neutral theme. Install/update primitives only with `yarn shadcn add <names>` (or the official npx CLI); do not handwrite or hand-edit their implementations. Business components compose imports from components/ui; native layout/typography remains HTML. Only diagnostics collapse (Accordion); room termination uses AlertDialog, not window.confirm. Keep popup styling separate from content-script player overlays.
+- Plasmo's PostCSS pipeline does not support this Tailwind 4 toolchain. `css:build` compiles style.css into ignored style.generated.css using the official Tailwind CLI; popup imports only the generated CSS. build/package generate CSS first. dev generates CSS first and runs css:watch plus Plasmo through concurrently. Do not import Tailwind's source CSS into Parcel or add a Tailwind PostCSS plugin; restrict Tailwind sources to popup/components to avoid unrelated generated output.
 - popup.tsx is disposable UI and diagnostics; never own room connections there.
 - background.ts routes messages and lazily creates the WEB_RTC offscreen document. Concurrent creation is serialized; worker restart discovers the existing context.
 - tabs/offscreen.ts produces tabs/offscreen.html and owns Trystero through lib/room.ts. background.ts restores saved sessions on startup/install and uses a one-minute alarm to recover a lost offscreen document. Popup closure and worker suspension do not own the transport lifetime.

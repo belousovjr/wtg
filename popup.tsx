@@ -1,6 +1,15 @@
 import { useState } from "react"
 import { RoomPanel } from "./components/room-panel"
 import { CHANNEL, sendRequest, type RuntimeStatus, type FrameStatus } from "./lib/messages"
+import { Button } from "./components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./components/ui/accordion"
+import { Alert, AlertDescription } from "./components/ui/alert"
+import { Badge } from "./components/ui/badge"
+import { Separator } from "./components/ui/separator"
+import { Spinner } from "./components/ui/spinner"
+import { Clapperboard, Radio, ScanLine } from "lucide-react"
+import "./style.generated.css"
 
 function IndexPopup() {
   const [status, setStatus] = useState<RuntimeStatus>()
@@ -23,23 +32,26 @@ function IndexPopup() {
   }
 
   return (
-    <div
-      style={{
-        padding: 16, width: 340, fontFamily: "system-ui", overflowWrap: "anywhere"
-      }}>
-      <h2>Watch Together</h2>
+    <main className="w-[400px] space-y-4 p-4 text-sm [overflow-wrap:anywhere]">
+      <header className="flex items-center gap-3 py-1">
+        <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Clapperboard className="size-5" /></div>
+        <div><h1 className="text-base font-semibold tracking-tight">Watch Together</h1><p className="text-xs text-muted-foreground">Один просмотр. Вместе.</p></div>
+        <Badge variant="secondary" className="ml-auto"><Radio className="size-3" />P2P</Badge>
+      </header>
       <RoomPanel />
-      <details style={{ marginTop: 16 }}><summary>Диагностика расширения</summary>
-      <button disabled={busy} onClick={check}>{busy ? "Проверяем…" : "Проверить подключение к странице"}</button>
-      {status && <div>
-        <p>WebRTC: {status.webRtcAvailable ? "доступен" : "недоступен"}</p>
-        <p>Контекст: {status.instanceId}</p>
-        <p>Запущен: {new Date(status.startedAt).toLocaleTimeString()}</p>
-      </div>}
-      {page && <p>Страница отвечает: {page.title || page.url}</p>}
-      {error && <p role="alert">{error}. Для обычной страницы попробуй обновить вкладку.</p>}
-      </details>
-    </div>
+      <Separator />
+      <Accordion type="single" collapsible><AccordionItem value="runtime" className="border-0">
+        <AccordionTrigger className="text-xs text-muted-foreground">Диагностика расширения</AccordionTrigger>
+        <AccordionContent className="space-y-3">
+          <Button variant="outline" size="sm" disabled={busy} onClick={check}>{busy ? <Spinner /> : <ScanLine />}Проверить страницу</Button>
+          {status && <Card size="sm"><CardHeader><CardTitle>Соединение</CardTitle></CardHeader><CardContent className="space-y-2 text-xs text-muted-foreground">
+            <p>WebRTC: {status.webRtcAvailable ? "доступен" : "недоступен"}</p><p>Контекст: {status.instanceId}</p><p>Запущен: {new Date(status.startedAt).toLocaleTimeString()}</p>
+          </CardContent></Card>}
+          {page && <p className="text-xs text-muted-foreground">Страница отвечает: {page.title || page.url}</p>}
+          {error && <Alert variant="destructive"><AlertDescription>{error}. Для обычной страницы попробуй обновить вкладку.</AlertDescription></Alert>}
+        </AccordionContent>
+      </AccordionItem></Accordion>
+    </main>
   )
 }
 
