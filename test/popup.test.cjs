@@ -33,8 +33,8 @@ function load(relative) {
 test("popup renders installed shadcn primitives with React 19 without touching room lifecycle", () => {
   const { default: Popup } = load("popup.tsx")
   const html = renderToStaticMarkup(React.createElement(Popup))
-  assert.match(html, /Watch Together/)
-  assert.match(html, /alt="Логотип Watch Together"/)
+  assert.match(html, /Watchly/)
+  assert.match(html, /alt="Логотип Watchly"/)
   assert.match(html, /data-slot="select-trigger"/)
   assert.match(html, /Русский/)
   assert.doesNotMatch(html, />P2P</)
@@ -68,7 +68,7 @@ test("popup renders English labels and a native English language name", () => {
     assert.match(html, /English/)
     assert.match(html, /Interface language/)
     assert.match(html, /Extension diagnostics/)
-    assert.match(html, /One video\. Together\./)
+    assert.match(html, /Same screen\. Same moment\./)
     assert.doesNotMatch(html, /Диагностика расширения/)
   } finally { applyLanguage("ru") }
 })

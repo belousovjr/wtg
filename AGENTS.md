@@ -28,7 +28,7 @@
 - Viewing-page equality uses origin + pathname + hash (samePageLocation), ignoring only query parameters, consistently for navigation, auto-binding, wrong-page readiness and the return-to-viewing-page action. Navigation uses the full shared URL. Frame matching retains its separate origin/path comparison to tolerate session-specific URLs.
 - “Открыть страницу просмотра” appears when the existing bound tab has a different URL. Background resolves the current shared URL and navigates only that bound tab; no rebind, new tab, room source change or reload of an already-matching URL. Closed/unbound tabs require explicit binding instead.
 
-- Watch Together synchronizes local HTML video players between users through Trystero rooms; media itself is not streamed between participants.
+- Watchly synchronizes local HTML video players between users through Trystero rooms; media itself is not streamed between participants. Brand slogan: “Same screen. Same moment.” / “Один экран. Один момент.” Author: belousovjr <belousowork@gmail.com>. Keep legacy wtg protocol/storage identifiers unchanged when updating branding to preserve existing sessions and invitations.
 - The creator remains administrator and alone can remove participants. All participants can choose the shared URL/video, control playback, and share invitations.
 - The creator coordinates command ordering and shared time without extra playback privileges. Prioritize synchronized playback; do not promise nanosecond precision in browsers.
 

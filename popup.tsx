@@ -39,7 +39,7 @@ function IndexPopup() {
     <main className="w-full min-w-0 space-y-4 p-4 text-sm [overflow-wrap:anywhere]">
       <header className="flex items-center gap-3 py-1">
         <img src={logoUrl} alt={t("popup.logoAlt")} className="size-11 shrink-0 rounded-xl object-contain" width={44} height={44} />
-        <div><h1 className="text-base font-semibold tracking-tight">Watch Together</h1><p className="text-xs text-muted-foreground">{t("popup.tagline")}</p></div>
+        <div><h1 className="text-base font-semibold tracking-tight">Watchly</h1><p className="text-xs text-muted-foreground">{t("popup.tagline")}</p></div>
         <Select value={language} onValueChange={value => { if (isLanguage(value)) void selectLanguage(value).catch(cause => setError(cause instanceof Error ? cause.message : t("popup.languageSaveFailed"))) }}><SelectTrigger size="sm" className="ml-auto w-auto shrink-0 text-xs" aria-label={t("popup.language")}><SelectValue>{nativeLanguageNames[language]}</SelectValue></SelectTrigger><SelectContent>{Object.entries(nativeLanguageNames).map(([code, name]) => <SelectItem key={code} value={code}>{name}</SelectItem>)}</SelectContent></Select>
       </header>
       <RoomPanel />
