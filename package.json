@@ -42,7 +42,6 @@
     "minimum_chrome_version": "116",
     "permissions": [
       "offscreen",
-      "activeTab",
       "webNavigation",
       "storage",
       "alarms"

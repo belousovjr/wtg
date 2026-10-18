@@ -98,7 +98,7 @@
 - components/video-picker.tsx is composed inside SourceControls, offering shared click-picking across accessible frames and a single current-player summary. Picking requires room/revision context and a one-minute tab-scoped session intent; background completes the source request after popup closure. Missing intent or changed room/revision rejects the pick, never falls back to a local override. Selecting in one frame clears other frame selections; Escape clears the intent and cancels picking across the tab. Closed shadow roots are unsupported.
 - lib/messages.ts defines validated local messages and typed replies. Every DOM route uses explicit tabId and frameId. Content scripts may route only to their own frame.
 - Transport, room state and future sync modules go under lib/ and are owned by offscreen; DOM logic stays in content scripts. Offscreen uses chrome.runtime only; tab operations go through background.
-- Permissions: offscreen, activeTab, webNavigation (frame topology), storage, alarms and HTTP(S) host access. No scripting/tabs permission is needed. Chrome internal pages, Web Store and inaccessible frames are unsupported. Refresh existing tabs after extension reload to attach content scripts.
+- Permissions: offscreen, webNavigation (frame topology), storage, alarms and HTTP(S) host access. activeTab is redundant with the current broad HTTP(S) host grants and is intentionally omitted; no scripting/tabs permission is needed. Chrome internal pages, Web Store and inaccessible frames are unsupported. Refresh existing tabs after extension reload to attach content scripts.
 
 ## Verification
 
