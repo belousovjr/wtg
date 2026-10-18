@@ -6,6 +6,8 @@
 
 ## Product
 
+- A shared player pick in a different tab explicitly transfers the initiating profile's viewing ownership to that picked tab after the coordinator confirms the matching next revision/descriptor and its full URL still matches. Suspend/detach the old viewer without navigating or closing it. Never transfer on a merely pending/rejected/expired selection; other participants keep their own viewers.
+
 - Header language control uses the CLI-installed shadcn Select with ru/en. Language names are hardcoded autonyms in nativeLanguageNames (“Русский”, “English”), never translated; the control's accessible label still comes from the locale dictionary. Language is a per-profile preference, not shared room state.
 
 - Removed-member display names are archived locally at removal under room ID and persistent public key (bounded optional removedNames vault field). Creator-only blockedNames maps restore labels after disconnection/restart; never display raw key fragments as names. Legacy removals without saved names use a neutral fallback. Names never affect signed membership policies or identity checks.

@@ -53,6 +53,18 @@ async function reconcile() {
   const url = webUrl(state.shared.url)
   if (!url) return
   const revision = sourceRevision(state.shared)
+  // A confirmed shared pick is explicit consent to move this profile's viewer
+  // to the tab where the user clicked, not to navigate the previous viewer.
+  if (localPick && localPick.expires > Date.now() && localPick.roomId === state.roomId && localPick.revision === revision && sameVideoSelection(localPick.video, state.shared.video)) {
+    const pickedTab = await chrome.tabs.get(localPick.tabId).catch(() => undefined)
+    if (pickedTab && webUrl(pickedTab.url || "") === url && (!viewer || viewer.closed || viewer.roomId !== state.roomId || viewer.tabId !== pickedTab.id)) {
+      await suspendViewer()
+      viewer = { boundByUser: true, roomId: state.roomId, revision: -1, url: "", tabId: pickedTab.id! }
+      lastReport = ""
+      await persist()
+      void chrome.tabs.sendMessage(pickedTab.id!, { channel: CHANNEL, to: "content", type: "source-watch" }, { frameId: 0 }).catch(() => {})
+    }
+  }
   if (!viewer || viewer.roomId !== state.roomId || viewer.closed) { await report("unavailable"); return }
   const changed = viewer.revision !== revision || viewer.url !== url
   let tab: chrome.tabs.Tab

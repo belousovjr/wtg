@@ -214,6 +214,39 @@ test("legacy auto-created viewer is not migrated into user consent", async () =>
   await assert.rejects(viewer.focusSource(), /не привязана/)
 })
 
+test("confirmed player selection transfers viewing to the picked tab without navigating the old tab", async () => {
+  const session = {}, tabs = new Map([[1, { id: 1, url: shared.url, status: "complete" }], [2, { id: 2, url: "https://example.com/second", status: "complete" }]])
+  const navigations = [], reloads = [], bindings = []
+  global.chrome = {
+    storage: { session: { get: async () => session, set: async value => Object.assign(session, value), remove: async key => { delete session[key] } } },
+    tabs: {
+      get: async id => { if (!tabs.has(id)) throw Error("Closed"); return tabs.get(id) },
+      update: async (id, value) => { navigations.push({ id, value }); Object.assign(tabs.get(id), value); return tabs.get(id) },
+      reload: async id => { reloads.push(id) },
+      sendMessage: async (id, message) => { if (message.type === "source-bind") bindings.push(id); return { ok: true, data: { status: "ready" } } }
+    },
+    webNavigation: { getAllFrames: async ({ tabId }) => [{ frameId: 0, parentFrameId: -1, url: tabs.get(tabId).url }] },
+    runtime: { sendMessage: async () => ({ ok: true }) }
+  }
+  const viewer = load("source-viewer", { "./messages": { CHANNEL: "test" }, "./source": source, "./room-protocol": protocol })
+  await viewer.applySourceState({ roomId: "room", ready: true, shared })
+  await viewer.bindSourceTab(1, "room")
+  const video = { ...descriptor, pageUrl: tabs.get(2).url, frameUrl: tabs.get(2).url }
+  await viewer.expectLocalSourcePick("room", 2, 1, video)
+  assert.equal(session.sourceViewer.tabId, 1) // No transfer before coordinator acceptance.
+  const next = { ...shared, sourceRevision: 2, url: video.pageUrl, video }
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: next })
+  assert.equal(session.sourceViewer.tabId, 2)
+  assert.equal(bindings.at(-1), 2)
+  assert.equal(tabs.get(1).url, shared.url)
+  assert.deepEqual(navigations, [])
+  assert.deepEqual(reloads, [])
+  assert.equal(await viewer.refreshSource(1), null)
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...next, sourceRevision: 3 } })
+  assert.deepEqual(reloads, [2]) // A later remote choice still updates the new viewing tab.
+  assert.equal(tabs.get(1).url, shared.url)
+})
+
 test("shared iframe binding tolerates session query tokens without choosing an ambiguous frame", async () => {
   const session = {}, bound = [], reports = []
   let duplicate = false
