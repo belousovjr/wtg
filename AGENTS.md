@@ -26,6 +26,7 @@
 ## Architecture
 
 - Popup document width is fixed at 400px in style.css (html width/min/max). html/body do not scroll; main is the sole scroll container with max-height: 600px, border-box sizing, permanent overflow-y: scroll and scrollbar-gutter: stable. Keep the scrollbar inside the fixed document width rather than the auto-sized Chrome popup viewport. Long URLs/selectors wrap and flex/grid children may shrink. Styles are popup-only.
+- Keep contextual actions in compact wrapping rows. Use short text for ambiguous choices (shared versus local picking, moving versus opening a page); auxiliary icon-only buttons need both title and aria-label. Room termination retains its confirmation dialog.
 
 - Chrome MV3, Plasmo 0.90.5, React 19.3, TypeScript. Chrome 116+ is required for runtime.getContexts.
 - Popup uses official shadcn CLI-installed Radix Nova components under components/ui, Tailwind CSS 4 and Lucide. Theme tokens in style.css define a soft rose palette (milky background, blush surfaces, readable berry accents) with matching dark tokens. Install/update primitives only with `yarn shadcn add <names>` (or the official npx CLI); do not handwrite or hand-edit their implementations. Business components compose imports from components/ui; native layout/typography remains HTML. Only diagnostics collapse (Accordion); room termination uses AlertDialog, not window.confirm. Keep popup styling separate from content-script player overlays.

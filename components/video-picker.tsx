@@ -51,10 +51,10 @@ export function VideoPicker({ room }: { room: RoomView }) {
   const current = bound || data?.frames.flatMap(frame => frame.snapshot.videos).find(video => sameVideoSelection(video.descriptor, room.shared.video))
   return <section className="space-y-3">
     <div className="flex flex-wrap gap-2">
-      <Button size="sm" disabled={busy || !room.ready} onClick={() => void pick(true)}><Share2 />{room.shared.video ? "Сменить плеер для всех" : "Выбрать плеер для всех"}</Button>
-      {room.shared.video && !bound && <Button variant="outline" size="sm" disabled={busy || !room.ready} onClick={() => void pick(false)}><MousePointer2 />Выбрать плеер для меня</Button>}
+      <Button size="sm" title="Выбрать плеер и страницу для всей группы" disabled={busy || !room.ready} onClick={() => void pick(true)}><Share2 />{room.shared.video ? "Сменить для всех" : "Выбрать для всех"}</Button>
+      {room.shared.video && !bound && <Button variant="outline" size="sm" title="Привязать плеер только у тебя" disabled={busy || !room.ready} onClick={() => void pick(false)}><MousePointer2 />Выбрать для меня</Button>}
     </div>
-    <p className="text-xs text-muted-foreground">После нажатия выбери плеер кликом на странице. Escape — отмена.</p>
+    <p className="text-xs text-muted-foreground">Затем кликни плеер на странице. Esc — отмена.</p>
     {room.shared.video ? <div className="space-y-1 text-xs">
       <p className="font-medium">{current?.label || "Общий плеер"}</p>
       <p className="text-muted-foreground">{bound ? "Привязан у тебя" : "Нужно выбрать плеер у тебя"}</p>

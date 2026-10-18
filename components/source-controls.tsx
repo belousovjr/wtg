@@ -47,12 +47,11 @@ export function SourceControls({ room }: { room: RoomView }) {
     {room.shared.url && <CardDescription className="break-all text-xs">{room.shared.url}</CardDescription>}
     {room.shared.url && <>
       {room.sourceReadiness[room.selfId]?.status === "unavailable" && <Alert><AlertDescription>Вкладка просмотра не привязана, закрыта или плеер недоступен.</AlertDescription></Alert>}
-      {!isViewingTab && hasViewingTab && <Button variant="outline" size="sm" disabled={tabBusy} onClick={() => void tabAction("source-focus")}><ExternalLink />К вкладке просмотра</Button>}
-      {wrongUrl && <Button size="sm" disabled={tabBusy} onClick={() => void tabAction("source-open-url")}>{tabBusy ? <Spinner /> : <ExternalLink />}Открыть страницу просмотра</Button>}
-      {!hasViewingTab ? <Button size="sm" disabled={tabBusy} onClick={() => void tabAction("source-attach")}>Смотреть в этой вкладке</Button> : !isViewingTab && <div className="space-y-2">
-        <p className="text-xs text-muted-foreground">Текущая вкладка станет вкладкой просмотра и откроет общий URL.</p>
-        <Button variant="outline" size="sm" disabled={tabBusy} onClick={() => void tabAction("source-attach")}><ArrowRightLeft />Перенести в эту вкладку</Button>
-      </div>}
+      <div className="flex flex-wrap items-center gap-2">
+        {!isViewingTab && hasViewingTab && <Button variant="outline" size="icon-sm" title="Перейти к вкладке просмотра" aria-label="Перейти к вкладке просмотра" disabled={tabBusy} onClick={() => void tabAction("source-focus")}><ExternalLink /></Button>}
+        {wrongUrl && <Button size="sm" title="Открыть общий URL во вкладке просмотра" disabled={tabBusy} onClick={() => void tabAction("source-open-url")}>{tabBusy ? <Spinner /> : <ExternalLink />}Открыть страницу</Button>}
+        {!hasViewingTab ? <Button size="sm" title="Назначить текущую вкладку для просмотра" disabled={tabBusy} onClick={() => void tabAction("source-attach")}><ArrowRightLeft />Смотреть здесь</Button> : !isViewingTab && <Button variant="outline" size="sm" title="Перенести просмотр сюда и открыть общий URL" disabled={tabBusy} onClick={() => void tabAction("source-attach")}><ArrowRightLeft />Перенести сюда</Button>}
+      </div>
     </>}
     {tabError && <Alert variant="destructive"><AlertDescription>{tabError}</AlertDescription></Alert>}
     </CardContent>

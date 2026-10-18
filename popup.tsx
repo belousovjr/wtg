@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./components/ui/accordion"
 import { Alert, AlertDescription } from "./components/ui/alert"
 import { Badge } from "./components/ui/badge"
-import { Separator } from "./components/ui/separator"
 import { Spinner } from "./components/ui/spinner"
 import { Radio, ScanLine } from "lucide-react"
 import logoUrl from "url:./assets/logo.svg"
@@ -40,11 +39,10 @@ function IndexPopup() {
         <Badge variant="secondary" className="ml-auto"><Radio className="size-3" />P2P</Badge>
       </header>
       <RoomPanel />
-      <Separator />
       <Accordion type="single" collapsible><AccordionItem value="runtime" className="border-0">
         <AccordionTrigger className="text-xs text-muted-foreground">Диагностика расширения</AccordionTrigger>
         <AccordionContent className="space-y-3">
-          <Button variant="outline" size="sm" disabled={busy} onClick={check}>{busy ? <Spinner /> : <ScanLine />}Проверить страницу</Button>
+          <Button variant="outline" size="sm" disabled={busy} onClick={check}>{busy ? <Spinner /> : <ScanLine />}Проверить</Button>
           {status && <Card size="sm"><CardHeader><CardTitle>Соединение</CardTitle></CardHeader><CardContent className="space-y-2 text-xs text-muted-foreground">
             <p>WebRTC: {status.webRtcAvailable ? "доступен" : "недоступен"}</p><p>Контекст: {status.instanceId}</p><p>Запущен: {new Date(status.startedAt).toLocaleTimeString()}</p>
           </CardContent></Card>}
