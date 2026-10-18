@@ -27,6 +27,11 @@ export function RoomPanel() {
   const [copied, setCopied] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
   const request = (command: RoomCommand) => sendRequest<RoomView>({ channel: CHANNEL, to: "background", type: "room", command })
+  function editNickname(value: string) {
+    nicknameEdited.current = true
+    setNickname(value)
+    if (validNickname(value.trim())) void request({ kind: "nickname", nickname: value.trim() }).catch(cause => setError(cause instanceof Error ? cause.message : "Не удалось сохранить прозвище"))
+  }
   useEffect(() => {
     let active = true
     const poll = () => void request({ kind: "status" }).then(view => { if (active) { setRoom(view); if (!nicknameEdited.current) setNickname(view.nickname || "") } }, cause => { if (active) setError(String(cause)) })
@@ -69,7 +74,7 @@ export function RoomPanel() {
         room.status === "error" && <Alert variant="destructive"><AlertDescription>Ошибка соединения</AlertDescription></Alert>}
     {room?.status === "idle" && !busy ? <>
       <Card><CardHeader><CardTitle>Смотреть вместе</CardTitle><CardDescription>Создай комнату или присоединись по приглашению.</CardDescription></CardHeader><CardContent className="space-y-4">
-        <div className="space-y-2"><Label htmlFor="nickname">Твоё прозвище</Label><Input id="nickname" autoComplete="nickname" maxLength={32} value={nickname} onChange={e => { nicknameEdited.current = true; setNickname(e.target.value) }} placeholder="Как тебя называть?" /></div>
+        <div className="space-y-2"><Label htmlFor="nickname">Твоё прозвище</Label><Input id="nickname" autoComplete="nickname" maxLength={32} value={nickname} onChange={e => editNickname(e.target.value)} placeholder="Как тебя называть?" /></div>
         <div className="space-y-2"><Label htmlFor="invitation">Приглашение</Label><Textarea id="invitation" value={invitation} onChange={e => setInvitation(e.target.value)} placeholder="wtg2.…" className="min-h-20 resize-none text-xs" /></div>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" disabled={busy || !validNickname(nickname.trim())} onClick={() => invitation.trim() ? void perform({ kind: "join", invitation: invitation.trim(), nickname: nickname.trim() }) : void create()}>{invitation.trim() ? <LogIn /> : <Plus />}{invitation.trim() ? "Войти" : "Создать"}</Button>

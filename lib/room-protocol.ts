@@ -25,6 +25,7 @@ export type RoomView = {
   error: string | null
 }
 export type RoomCommand =
+  | { kind: "nickname"; nickname: string }
   | { kind: "playback"; request: PlaybackRequest }
   | { kind: "player-report"; report: PlayerReport }
   | SourceCommand
@@ -72,6 +73,7 @@ export function validShared(value: unknown): value is SharedState {
 export function validRoomCommand(value: unknown): value is RoomCommand {
   if (!value || typeof value !== "object") return false
   const c = value as RoomCommand
+  if (c.kind === "nickname") return validNickname(c.nickname)
   if ((c.kind === "create" || c.kind === "join") && c.nickname !== undefined && !validNickname(c.nickname)) return false
   if (c.kind === "playback") return validPlaybackRequest(c.request)
   if (c.kind === "player-report") return validPlayerReport(c.report)

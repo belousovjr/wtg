@@ -348,6 +348,11 @@ export function initializeRoom() {
 export function roomCommand(command: RoomCommand): Promise<RoomView> {
   return serialized(async () => {
     await initializeRoom()
+    if (command.kind === "nickname") {
+      if (!validNickname(command.nickname)) throw new Error("Укажи прозвище от 1 до 32 символов")
+      vault.nickname = command.nickname
+      await save()
+    }
     if (command.kind === "status") notifySource()
     if (command.kind === "status" && invite && !room) await connect(60000)
     if (command.kind === "leave") {

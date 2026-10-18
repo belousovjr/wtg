@@ -109,6 +109,18 @@ test("nicknames validate bounded display names without becoming identity", () =>
   assert.equal(protocol.validRoomCommand({ kind: "join", invitation: "invite", nickname: " " }), false)
 })
 
+test("nickname persists before entering a room and prefills a fresh client", async () => {
+  const disk = {}, network = []
+  const first = client("profile-before", disk, network)
+  await first.roomCommand({ kind: "nickname", nickname: "Роза" })
+  assert.equal(disk.value.nickname, "Роза")
+  assert.equal(disk.value.session, null)
+  const reopened = client("profile-after", disk, network)
+  const status = await reopened.roomCommand({ kind: "status" })
+  assert.equal(status.status, "idle")
+  assert.equal(status.nickname, "Роза")
+})
+
 test("signed end survives offline guest and cannot be forged", async () => {
   const network = [], disk = {}
   const admin = client("admin", disk, network)
