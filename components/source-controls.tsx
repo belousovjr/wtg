@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { CHANNEL } from "../lib/messages"
 import { decodeInvitation, type RoomView } from "../lib/room-protocol"
-import { sameFrameLocation } from "../lib/source"
+import { samePageLocation } from "../lib/source"
 export function SourceControls({ room }: { room: RoomView }) {
   const [tabError, setTabError] = useState("")
   const [tabBusy, setTabBusy] = useState(false)
@@ -17,7 +17,7 @@ export function SourceControls({ room }: { room: RoomView }) {
       const belongs = !!room.invitation && viewer?.roomId === decodeInvitation(room.invitation).roomId
       const viewingTab = belongs && viewer?.boundByUser && !viewer.closed ? await chrome.tabs.get(viewer.tabId).catch(() => undefined) : undefined
       if (!active) return
-      setWrongUrl(!!viewingTab && !!room.shared.url && !sameFrameLocation(viewingTab.url || "", room.shared.url))
+      setWrongUrl(!!viewingTab && !!room.shared.url && !samePageLocation(viewingTab.url || "", room.shared.url))
       setHasViewingTab(!!viewingTab)
       setIsViewingTab(!!viewingTab && viewer.tabId === tabs[0]?.id)
     }

@@ -40,7 +40,8 @@ Storage schema/key errors stop recovery rather than silently replacing identity.
 Any admitted participant can change the shared URL or use “Выбрать для всех” on a
 video card. The coordinator orders changes with source revisions. Creating or
 joining a room binds the tab active at that action as your viewing tab. Shared
-URLs navigate only that tab; matching URLs do not reload. Switching to another
+URLs navigate only that tab. Explicit shared source changes force a document reload,
+even at the same URL; periodic snapshots and local rebinding do not. Switching to another
 tab does not move the binding. No new tabs are created automatically.
 “Это мой плеер” (shown when local binding is unconfirmed) and
 on-page selection only map a local player, useful when the shared selector does

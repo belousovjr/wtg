@@ -1,5 +1,5 @@
 import { CHANNEL } from "./messages"
-import { sameFrameLocation, sourceRevision, webUrl, type SourceReadiness, type SourceStatus } from "./source"
+import { sameFrameLocation, samePageLocation, sourceRevision, webUrl, type SourceReadiness, type SourceStatus } from "./source"
 import { validShared, type SharedState } from "./room-protocol"
 import type { VideoDescriptor } from "./video"
 import { validPlaybackRequest, validPlayerReport, type PlaybackLocal } from "./playback"
@@ -53,13 +53,29 @@ async function reconcile() {
   try { tab = await chrome.tabs.get(viewer.tabId) }
   catch { viewer.closed = true; await persist(); await report("unavailable"); return }
   if (changed) {
+    const sharedChange = viewer.revision >= 0 && viewer.revision !== revision
     viewer = { boundByUser: true, roomId: state.roomId, revision, url, tabId: tab.id! }
     await persist()
     lastReport = ""
-    if (!sameFrameLocation(tab.url || "", url)) { await chrome.tabs.update(tab.id!, { url }); await report("loading-page"); return }
+    if (sharedChange) {
+      const previousUrl = webUrl(tab.url || "")
+      if (previousUrl === url) await chrome.tabs.reload(tab.id!)
+      else {
+        await chrome.tabs.update(tab.id!, { url })
+        // Hash-only navigation does not load a new document on its own.
+        if (previousUrl) {
+          const previous = new URL(previousUrl), next = new URL(url)
+          if (previous.origin === next.origin && previous.pathname === next.pathname && previous.search === next.search)
+            await chrome.tabs.reload(tab.id!)
+        }
+      }
+      await report("loading-page")
+      return
+    }
+    if (!samePageLocation(tab.url || "", url)) { await chrome.tabs.update(tab.id!, { url }); await report("loading-page"); return }
   }
   if (tab.status === "loading") { await report("loading-page"); return }
-  if (!sameFrameLocation(tab.url || "", url)) { await report("wrong-page"); return }
+  if (!samePageLocation(tab.url || "", url)) { await report("wrong-page"); return }
   const descriptor = viewer?.override?.descriptor || state.shared.video
   if (!descriptor) { await report("needs-video"); return }
   const frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id! }) || []
@@ -125,7 +141,7 @@ export function bindSourceTab(tabId: number, roomId: string, onlyIfMatching = fa
     if (onlyIfMatching) {
       const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
       if (active?.id !== tabId) return viewer
-      if (!state?.ready || state.roomId !== roomId || !state.shared.url || !sameFrameLocation(tab.url || "", state.shared.url)) return viewer
+      if (!state?.ready || state.roomId !== roomId || !state.shared.url || !samePageLocation(tab.url || "", state.shared.url)) return viewer
       if (viewer?.roomId === roomId && !viewer.closed) {
         const existing = await chrome.tabs.get(viewer.tabId).catch(() => undefined)
         if (existing) return viewer
@@ -169,7 +185,7 @@ export function openSourceUrl() {
     let tab: chrome.tabs.Tab
     try { tab = await chrome.tabs.get(viewer.tabId) }
     catch { viewer.closed = true; await persist(); await report("unavailable"); throw new Error("Вкладка просмотра закрыта") }
-    if (!sameFrameLocation(tab.url || "", url)) {
+    if (!samePageLocation(tab.url || "", url)) {
       await suspendViewer()
       await chrome.tabs.update(viewer.tabId, { url })
       await report("loading-page")

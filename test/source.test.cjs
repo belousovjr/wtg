@@ -63,11 +63,12 @@ test("URL and descriptor validation rejects unsafe URLs and mismatched pages", (
 })
 test("viewer only navigates explicitly bound tabs, preserves matching URLs and requires rebinding after close", async () => {
   const session = {}, tabs = new Map([[1, { id: 1, url: shared.url, status: "complete" }], [99, { id: 99, url: "https://unrelated.example.com", status: "complete" }]]), reports = [], bound = [], navigations = []
-  let created = 0, missing = true, activeTabId = 99
+  let created = 0, missing = true, activeTabId = 99, reloads = 0
   global.chrome = {
     storage: { session: { get: async () => session, set: async value => Object.assign(session, value), remove: async key => { delete session[key] } } },
     tabs: {
       query: async () => [tabs.get(activeTabId)].filter(Boolean),
+      reload: async id => { assert.equal(id, 1); reloads++ },
       create: async () => { created++; throw Error("Must not create tabs") },
       get: async id => { if (!tabs.has(id)) throw Error("Missing"); return tabs.get(id) },
       update: async (id, data) => { if (data.url) navigations.push({ id, url: data.url }); Object.assign(tabs.get(id), data); return tabs.get(id) },
@@ -111,13 +112,24 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   const afterReturn = navigations.length
   await viewer.openSourceUrl()
   assert.equal(navigations.length, afterReturn) // Already at shared URL: no reload.
-  tabs.get(1).url = `${shared.url}?token=local#position`
+  tabs.get(1).url = `${shared.url}?token=local`
   await viewer.openSourceUrl()
   await viewer.refreshSource(1)
-  assert.equal(navigations.length, afterReturn) // Query/hash changes are the same viewing page.
+  assert.equal(navigations.length, afterReturn) // Query changes are the same viewing page.
   assert.notEqual(reports.at(-1).status, "wrong-page")
+  tabs.get(1).url = `${shared.url}#position`
+  await viewer.refreshSource(1)
+  assert.equal(reports.at(-1).status, "wrong-page")
+  await viewer.openSourceUrl()
+  assert.equal(tabs.get(1).url, shared.url)
+  assert.equal(navigations.length, afterReturn + 1)
   assert.equal(shared.video.selector, "#video") // Local mapping never changes shared descriptor.
   const updated = { ...shared, url: "https://example.com/next", video: null, sourceRevision: 2 }
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...shared, sourceRevision: 2 } })
+  assert.equal(reloads, 1) // Explicit shared source change reloads even the same URL.
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...shared, sourceRevision: 2 } })
+  assert.equal(reloads, 1) // Periodic snapshots must not cause reload loops.
+  updated.sourceRevision = 3
   await viewer.applySourceState({ roomId: "room", ready: true, shared: updated })
   assert.equal(created, 0)
   assert.equal(tabs.get(1).url, updated.url)
@@ -130,7 +142,7 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   assert.equal(tabs.size, 1)
   await assert.rejects(viewer.focusSource(), /закрыта/)
   await assert.rejects(viewer.openSourceUrl(), /закрыта/)
-  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...updated, sourceRevision: 3 } })
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...updated, sourceRevision: 4 } })
   assert.equal(created, 0)
   assert.equal(tabs.get(99).url, "https://unrelated.example.com") // New revision is not consent to use another tab.
   await viewer.bindSourceTab(99, "room")
@@ -141,7 +153,7 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   assert.equal(navigations.length, navigationCount) // Focus does not navigate.
   // A new worker restores the same user-approved binding from storage.session.
   const restarted = load("source-viewer", { "./messages": { CHANNEL: "test" }, "./source": source, "./room-protocol": protocol })
-  await restarted.applySourceState({ roomId: "room", ready: true, shared: { ...updated, sourceRevision: 3 } })
+  await restarted.applySourceState({ roomId: "room", ready: true, shared: { ...updated, sourceRevision: 4 } })
   assert.equal(navigations.length, navigationCount)
   await restarted.applySourceState({ roomId: null, ready: false, shared: { url: null, video: null, playback: { position: 0, paused: true, rate: 1 } } })
   assert.equal(tabs.has(99), true) // Leave detaches, never closes user's tab.

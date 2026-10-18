@@ -11,6 +11,12 @@ export function webUrl(value: string): string | null {
   } catch { return null }
 }
 export const sourceRevision = (shared: SharedState) => shared.sourceRevision || 0
+export function samePageLocation(a: string, b: string) {
+  try {
+    const x = new URL(a), y = new URL(b)
+    return sameFrameLocation(a, b) && x.hash === y.hash
+  } catch { return a === b }
+}
 export function sameFrameLocation(a: string, b: string) {
   try {
     const x = new URL(a), y = new URL(b)
