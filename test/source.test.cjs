@@ -126,9 +126,11 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   assert.equal(navigations.length, 0) // Already at the source: no reload.
   await viewer.refreshSource(1)
   assert.equal(reports.at(-1).status, "needs-video")
+  assert.equal((await viewer.refreshSource(1)).startupPrompt, true)
   assert.equal(viewer.selectLocalSource, undefined)
   missing = false
   await viewer.refreshManagedSource() // Background retry binds a player that appeared later, without popup.
+  assert.equal((await viewer.refreshSource(1)).startupPrompt, false)
   assert.equal(reports.at(-1).status, "ready")
   assert.equal(bound.at(-1).descriptor.selector, "#video")
   assert.equal(bound.at(-1).shared, true)

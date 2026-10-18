@@ -160,7 +160,12 @@ export function forwardPlaybackEvent(sender: chrome.runtime.MessageSender, messa
   })
 }
 export function refreshSource(tabId: number) {
-  return serial(async () => { await load(); if (viewer?.tabId === tabId) await reconcile(); return viewer?.tabId === tabId ? viewer : null })
+  return serial(async () => {
+    await load()
+    if (viewer?.tabId === tabId) await reconcile()
+    if (viewer?.tabId !== tabId) return null
+    return { ...viewer, startupPrompt: !!state?.ready && !!state.shared.video && viewer.status === "needs-video" }
+  })
 }
 export function refreshManagedSource() {
   return serial(async () => {

@@ -5,6 +5,28 @@ type EventMessage = { kind: "request"; request: PlaybackRequest } | { kind: "rep
 export class PlayerSync {
   private indicator = new PlayerIndicator()
   private playPending = false
+  private probe?: { video: HTMLVideoElement; context: NonNullable<PlayerSync["context"]> }
+  private probedVideo?: HTMLVideoElement
+  private probeAutoplay() {
+    const video = this.video, context = this.context
+    if (!video?.isConnected || !context || this.probe || this.probedVideo === video || this.autoplayBlocked || context.playback.preparation || context.playback.command && !context.playback.command.paused) return
+    this.probedVideo = video
+    const probe = { video, context }
+    this.probe = probe
+    const valid = () => this.probe === probe && this.video === video && this.context?.roomId === context.roomId && this.context.revision === context.revision && this.context.playback.epoch === context.playback.epoch && !this.context.playback.preparation && (!this.context.playback.command || this.context.playback.command.paused)
+    void Promise.resolve().then(() => { if (valid()) return video.play() }).then(() => {
+      if (!valid()) return
+      this.expectedPaused = true
+      video.pause()
+      this.autoplayBlocked = false
+    }, error => {
+      if (!valid()) return
+      if (error?.name === "NotAllowedError") { this.showUnlock(); this.report("blocked", "Нажми Play на плеере") }
+    }).finally(() => {
+      if (this.probe === probe) this.probe = undefined
+      this.renderIndicator()
+    })
+  }
   private renderIndicator() {
     if (this.context) this.indicator.update(this.video, this.context.playback, this.context.revision, this.userSeeking || !!this.pendingSeekId || this.pendingManual, this.autoplayBlocked, this.playPending || !!this.scheduled)
   }
@@ -32,6 +54,8 @@ export class PlayerSync {
   bind() {
     const video = this.getVideo()
     if (video === this.video) return
+    this.probe = undefined
+    this.probedVideo = undefined
     this.playPending = false
     clearTimeout(this.seekTimer)
     clearTimeout(this.pauseTimer)
@@ -55,6 +79,7 @@ export class PlayerSync {
         preparationCommandId: playback?.preparation?.commandId, pendingSeekId: this.pendingSeekId, userSeeking: this.userSeeking })
     }
     if (!playback) {
+      this.probe = undefined; this.probedVideo = undefined
       this.playPending = false
       this.indicator.clear()
       this.pendingSeekId = undefined; this.userSeeking = false; this.pendingManual = false
@@ -70,6 +95,7 @@ export class PlayerSync {
     if (this.context?.playback.epoch === playback.epoch && this.context.revision === revision && playback.command && this.context.playback.command && playback.command.sequence < this.context.playback.command.sequence) return
     if (playback.command && !validCommit(playback.command) || playback.preparation && !validPreparation(playback.preparation)) return
     if (this.context?.roomId !== roomId || this.context.revision !== revision || this.context.playback.epoch !== playback.epoch) {
+      this.probe = undefined; this.probedVideo = undefined
       this.playPending = false
       clearTimeout(this.timer); clearTimeout(this.seekTimer)
       clearTimeout(this.pauseTimer)
@@ -106,7 +132,7 @@ export class PlayerSync {
       return
     }
     const command = playback.command
-    if (!command) { this.expectedPaused = true; video.pause(); return }
+    if (!command) { if (!this.probe) { this.expectedPaused = true; video.pause(); this.probeAutoplay() }; return }
     if (command.revision !== revision) return
     if (this.playPending || this.autoplayBlocked && !command.paused) return
     const id = `${command.epoch}:${command.sequence}`
@@ -132,7 +158,7 @@ export class PlayerSync {
       this.expectedPaused = command.paused
       this.applied = aligned ? id : ""
       const late = Math.max(0, coordinatorTime - command.executeAt)
-      if (command.paused) { video.pause(); this.autoplayBlocked = false; this.report("ready", undefined, late) }
+      if (command.paused) { video.pause(); this.autoplayBlocked = false; this.report("ready", undefined, late); this.probeAutoplay() }
       else {
         this.playPending = true
         console.info("[WTG playback] Вызываем play()", { sequence: command.sequence, position: video.currentTime, readyState: video.readyState, seeking: video.seeking })
@@ -208,6 +234,7 @@ export class PlayerSync {
     this.send(context.roomId, context.revision, { kind: "report", report })
   }
   private onEvent = (event: Event) => {
+    if (this.probe && this.probe.video === this.video && (event.type === "play" || event.type === "pause") && !this.context?.playback.preparation && (!this.context?.playback.command || this.context.playback.command.paused)) return
     const c = this.context, video = this.video
     if ((event.type === "seeking" || event.type === "seeked") && video && event.target === video)
       console.info(`[WTG seek] ${event.type} перехвачен`, { position: video.currentTime, paused: video.paused, activeContext: !!c, revision: c?.revision })

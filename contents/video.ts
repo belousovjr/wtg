@@ -250,9 +250,34 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 })
 // Only the top frame drives periodic readiness checks; child frames notify on load.
 let sourceRefreshTimer: ReturnType<typeof setInterval> | undefined
+let startupNotice: HTMLDivElement | undefined
+let startupNoticeAnimation = 0
+function showStartupNotice(visible: boolean) {
+  if (!visible) { cancelAnimationFrame(startupNoticeAnimation); startupNotice?.remove(); startupNotice = undefined; return }
+  if (startupNotice) return
+  startupNotice = document.createElement("div")
+  startupNotice.textContent = "Нажми Play"
+  startupNotice.setAttribute("role", "status")
+  startupNotice.setAttribute("aria-live", "polite")
+  startupNotice.style.cssText = "all:initial;position:fixed;right:90px;top:10px;z-index:2147483647;pointer-events:none;padding:6px 9px;border-radius:7px;background:rgba(20,24,30,.72);color:#ea4c89;font:500 11px/1.4 system-ui;max-width:calc(100vw - 100px);box-sizing:border-box;backdrop-filter:blur(6px)"
+  document.documentElement.append(startupNotice)
+  const visibleVideos = videosIn().filter(video => { const r = video.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
+  const fallbackAnchor = visibleVideos.length === 1 ? visibleVideos[0] : undefined
+  const positionNotice = () => {
+    if (!startupNotice) return
+    const anchor = selected?.isConnected ? selected : fallbackAnchor?.isConnected ? fallbackAnchor : undefined
+    const rect = anchor?.getBoundingClientRect()
+    startupNotice.style.top = `${Math.max(10, (rect?.top || 0) + 10)}px`
+    startupNotice.style.right = "auto"
+    startupNotice.style.left = `${Math.max(0, rect?.left ?? 10)}px`
+    startupNoticeAnimation = requestAnimationFrame(positionNotice)
+  }
+  positionNotice()
+}
 const refreshRoomSource = () => {
   void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "source-refresh" }).then(reply => {
     if (window !== window.top) return
+    if (reply?.ok) showStartupNotice(!!reply.data?.startupPrompt)
     if (reply?.data && !sourceRefreshTimer) sourceRefreshTimer = setInterval(refreshRoomSource, 2000)
     if (!reply?.data && sourceRefreshTimer) { clearInterval(sourceRefreshTimer); sourceRefreshTimer = undefined }
   }).catch(() => { /* A transient worker/message failure must not stop a managed page's retries. */ })

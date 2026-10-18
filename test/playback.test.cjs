@@ -442,6 +442,33 @@ test("continuous correction changes rate then restores it, seeks large drift wit
   assert.equal(tick, undefined)
 })
 
+test("idle binding probes autoplay once, pauses on success and records confirmed denial", async () => {
+  const clock = { time: 1000 }, events = []
+  class Video extends EventTarget {
+    isConnected = true; paused = true; currentTime = 0; playbackRate = 1; readyState = 4; calls = 0; blocked = false
+    play() { this.calls++; if (this.blocked) return Promise.reject(Object.assign(new Error(), { name: "NotAllowedError" })); this.paused = false; this.dispatchEvent(new Event("play")); return Promise.resolve() }
+    pause() { this.paused = true; this.dispatchEvent(new Event("pause")) }
+  }
+  const pb = load("playback", clock), player = load("player-sync", clock, { "./playback": pb })
+  let video = new Video()
+  const sync = new player.PlayerSync(() => video, (_r, _v, message) => events.push(message))
+  const state = { epoch: "epoch", command: null, preparation: null, players: {}, clock: null }
+  const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
+  sync.update("room", 0, state)
+  await settle()
+  assert.equal(video.calls, 1)
+  assert.equal(video.paused, true)
+  sync.update("room", 0, { ...state })
+  await settle()
+  assert.equal(video.calls, 1)
+  video = new Video(); video.blocked = true
+  sync.update("room", 0, state)
+  await settle()
+  assert.equal(sync.autoplayBlocked, true)
+  assert.equal(events.filter(e => e.kind === "request").length, 0)
+  sync.update("room", 0, null)
+})
+
 test("autoplay denial is cleared by native Play without an extra button or shared restart", async () => {
   const clock = { time: 1000 }, tasks = [], panels = [], events = []
   class Video extends EventTarget {
