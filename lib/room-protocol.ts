@@ -7,6 +7,8 @@ export const ROOM_VERSION = 2
 export type Invitation = { version: 2; roomId: string; secret: string; adminKey: string }
 export type SharedState = { control?: Commit; sourceRevision?: number; url: string | null; video: VideoDescriptor | null; playback: { position: number; paused: boolean; rate: number } }
 export type RoomView = {
+  nickname?: string
+  participantNames?: Record<string, string>
   sync?: PlaybackLocal
   sourceReadiness: Record<string, SourceReadiness>
   pendingParticipants: { peerId: string; publicKey: string }[]
@@ -29,13 +31,16 @@ export type RoomCommand =
   | { kind: "source-ready"; readiness: SourceReadiness }
   | MemberCommand
   | { kind: "status" }
-  | { kind: "create"; initial?: SharedState }
-  | { kind: "join"; invitation: string }
+  | { kind: "create"; initial?: SharedState; nickname?: string }
+  | { kind: "join"; invitation: string; nickname?: string }
   | { kind: "leave" }
   | { kind: "retry" }
   | { kind: "end" }
 
 const token = /^[a-zA-Z0-9_-]{16,128}$/
+export function validNickname(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 32 && value === value.trim() && !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(value)
+}
 export function encodeInvitation(invite: Invitation) {
   return `wtg2.${btoa(JSON.stringify(invite)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`
 }
@@ -67,6 +72,7 @@ export function validShared(value: unknown): value is SharedState {
 export function validRoomCommand(value: unknown): value is RoomCommand {
   if (!value || typeof value !== "object") return false
   const c = value as RoomCommand
+  if ((c.kind === "create" || c.kind === "join") && c.nickname !== undefined && !validNickname(c.nickname)) return false
   if (c.kind === "playback") return validPlaybackRequest(c.request)
   if (c.kind === "player-report") return validPlayerReport(c.report)
   if (c.kind === "source-ready") return validReadiness(c.readiness)

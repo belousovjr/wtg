@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { CHANNEL, sendRequest } from "../lib/messages"
 import type { RoomCommand, RoomView, SharedState } from "../lib/room-protocol"
 import type { TabVideos } from "../lib/video"
@@ -10,6 +10,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./ui/
 import { Badge } from "./ui/badge"
 import { Textarea } from "./ui/textarea"
 import { Label } from "./ui/label"
+import { Input } from "./ui/input"
+import { validNickname } from "../lib/room-protocol"
 import { Alert, AlertDescription } from "./ui/alert"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "./ui/accordion"
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "./ui/alert-dialog"
@@ -18,6 +20,8 @@ import { Copy, Check, Plus, LogIn, LogOut, RotateCw, UserCheck, Power } from "lu
 export function RoomPanel() {
   const [room, setRoom] = useState<RoomView>()
   const [invitation, setInvitation] = useState("")
+  const [nickname, setNickname] = useState("")
+  const nicknameEdited = useRef(false)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -25,7 +29,7 @@ export function RoomPanel() {
   const request = (command: RoomCommand) => sendRequest<RoomView>({ channel: CHANNEL, to: "background", type: "room", command })
   useEffect(() => {
     let active = true
-    const poll = () => void request({ kind: "status" }).then(view => { if (active) setRoom(view) }, cause => { if (active) setError(String(cause)) })
+    const poll = () => void request({ kind: "status" }).then(view => { if (active) { setRoom(view); if (!nicknameEdited.current) setNickname(view.nickname || "") } }, cause => { if (active) setError(String(cause)) })
     poll()
     const timer = setInterval(poll, 2000)
     return () => { active = false; clearInterval(timer) }
@@ -49,7 +53,7 @@ export function RoomPanel() {
         const selected = videos.frames.flatMap(frame => frame.snapshot.videos.filter(video => video.id === frame.snapshot.selectedId))[0]
         if (selected) initial = { url: selected.descriptor.pageUrl, video: selected.descriptor, playback: { position: selected.position, paused: selected.paused, rate: selected.playbackRate } }
       }
-      setRoom(await request({ kind: "create", initial }))
+      setRoom(await request({ kind: "create", initial, nickname: nickname.trim() }))
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Не удалось создать комнату") }
     finally { setBusy(false) }
   }
@@ -65,10 +69,11 @@ export function RoomPanel() {
         room.status === "error" && <Alert variant="destructive"><AlertDescription>Ошибка соединения</AlertDescription></Alert>}
     {room?.status === "idle" && !busy ? <>
       <Card><CardHeader><CardTitle>Смотреть вместе</CardTitle><CardDescription>Создай комнату или присоединись по приглашению.</CardDescription></CardHeader><CardContent className="space-y-4">
+        <div className="space-y-2"><Label htmlFor="nickname">Твоё прозвище</Label><Input id="nickname" autoComplete="nickname" maxLength={32} value={nickname} onChange={e => { nicknameEdited.current = true; setNickname(e.target.value) }} placeholder="Как тебя называть?" /></div>
         <div className="space-y-2"><Label htmlFor="invitation">Приглашение</Label><Textarea id="invitation" value={invitation} onChange={e => setInvitation(e.target.value)} placeholder="wtg2.…" className="min-h-20 resize-none text-xs" /></div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={busy} onClick={create}><Plus />Создать</Button>
-          <Button variant="outline" size="sm" disabled={busy || !invitation.trim()} onClick={() => void perform({ kind: "join", invitation })}><LogIn />Войти</Button>
+          <Button size="sm" disabled={busy || !validNickname(nickname.trim())} onClick={create}><Plus />Создать</Button>
+          <Button variant="outline" size="sm" disabled={busy || !invitation.trim() || !validNickname(nickname.trim())} onClick={() => void perform({ kind: "join", invitation, nickname: nickname.trim() })}><LogIn />Войти</Button>
         </div>
       </CardContent></Card>
     </> : room && room.status !== "idle" && <>
@@ -77,7 +82,7 @@ export function RoomPanel() {
       <GroupPlayerStatus room={room} busy={busy} remove={id => void perform({ kind: "remove", peerId: id })} />
       {room.isAdmin && room.approvalRequired && <p className="text-xs text-muted-foreground">Новые участники входят после твоего подтверждения.</p>}
       {room.isAdmin && room.pendingParticipants.length > 0 && <Card size="sm"><CardHeader><CardTitle>Ожидают допуска</CardTitle></CardHeader><CardContent className="space-y-2">
-        {room.pendingParticipants.map(member => <div className="flex items-center justify-between gap-2" key={member.peerId}><span className="font-mono text-xs">{member.peerId.slice(0, 8)}</span>
+        {room.pendingParticipants.map(member => <div className="flex items-center justify-between gap-2" key={member.peerId}><span className="text-xs">{room.participantNames?.[member.peerId] || "Участник"}</span>
           <Button size="icon-sm" variant="outline" title="Разрешить вход" aria-label="Разрешить вход" disabled={busy} onClick={() => void perform({ kind: "approve", peerId: member.peerId })}><UserCheck /></Button>
         </div>)}
       </CardContent></Card>}

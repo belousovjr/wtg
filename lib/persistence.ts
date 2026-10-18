@@ -1,11 +1,11 @@
 import { CHANNEL } from "./messages"
 import type { StoredIdentity } from "./identity"
-import { decodeInvitation, validShared, type SharedState } from "./room-protocol"
+import { decodeInvitation, validShared, validNickname, type SharedState } from "./room-protocol"
 import { validPolicy, type MembershipPolicy } from "./membership"
 
 export type EndCertificate = { roomId: string; adminKey: string; endedAt: number; signature: string; invitation?: string }
 export type SavedSession = { invitation: string; shared: SharedState }
-export type Vault = { version: 1; identity: StoredIdentity | null; session: SavedSession | null; ended: EndCertificate[]; policies?: MembershipPolicy[] }
+export type Vault = { version: 1; nickname?: string; identity: StoredIdentity | null; session: SavedSession | null; ended: EndCertificate[]; policies?: MembershipPolicy[] }
 export const emptyVault = (): Vault => ({ version: 1, identity: null, session: null, ended: [], policies: [] })
 export function validCertificate(value: unknown): value is EndCertificate {
   if (!value || typeof value !== "object") return false
@@ -16,6 +16,7 @@ export function validateVault(value: unknown): Vault {
   if (value === undefined) return emptyVault()
   if (!value || typeof value !== "object") throw new Error("Повреждено хранилище сессии. Автовход остановлен.")
   const v = value as Vault
+  if (v.nickname !== undefined && !validNickname(v.nickname)) throw new Error("Повреждено сохранённое прозвище")
   if (v.version !== 1) throw new Error("Неподдерживаемая версия хранилища; требуется миграция")
   if (v.identity !== null && (!v.identity || typeof v.identity.publicKey !== "string" || v.identity.publicKey.length !== 87 || !v.identity.privateKey || typeof v.identity.privateKey.d !== "string")) throw new Error("Повреждена сохранённая идентичность")
   if (v.session !== null) {

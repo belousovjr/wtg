@@ -6,6 +6,9 @@
 
 ## Product
 
+- Participants choose a public nickname (1–32 trimmed characters, no control/bidi override characters) when creating/joining. The successful entry saves nickname in the version-1 local vault; popup status supplies it for prefill without overwriting an edited field. Nicknames are display-only and need not be unique: cryptographic keys/Peer IDs remain the sole admission/removal/control identity. React renders names as text.
+- Authenticated proof/hello packets carry the sender's nickname; the coordinator distributes a bounded per-current-roster participantNames map in authenticated snapshots. Pending admission names are visible to the creator. Recovery resends the locally saved nickname under the new transport ID. Older peers/vaults may omit names and display a neutral fallback; nickname is an additive optional vault/protocol field, not a schema/version reset.
+
 - assets/logo.svg uses the user-provided brand artwork with theme-matched colors: warm rose primary, plum foreground and milky background. Popup imports it as a bundled URL asset rather than inlining SVG markup or loading an external image.
 - assets/icon.png is a 512px PNG rasterization of assets/logo.svg, generated with Sharp and a centered circular alpha mask (transparent corners, antialiased edge). Popup SVG remains unchanged. Plasmo derives toolbar/action and extension-management icon sizes from this file; preserve the circular mask when regenerating, then rebuild and reload the extension.
 

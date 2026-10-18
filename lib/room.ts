@@ -1,7 +1,7 @@
 import { joinRoom, selfId } from "trystero"
 import { PlaybackSession } from "./playback"
 import { commitSource, sourceRevision, validReadiness, type SourceCommand, type SourceReadiness } from "./source"
-import { validRoomCommand } from "./room-protocol"
+import { validRoomCommand, validNickname } from "./room-protocol"
 import { canAcceptMemberCommand, isAdmitted, policyText, validPolicy, type MemberCommand, type MembershipPolicy } from "./membership"
 import { challengeText, createIdentity, sign, validateIdentity, verify } from "./identity"
 import { endText, validCertificate, validateVault, vaultRequest, type EndCertificate, type Vault } from "./persistence"
@@ -88,7 +88,7 @@ async function connect(retryDelay = 30000) {
     vault.policies = [...vault.policies || [], policy]
     await save()
   }
-  view = { ...view, sync: undefined, sourceReadiness: {}, pendingParticipants: [], blockedKeys: isAdmin ? policy?.blocked || [] : [], approvalRequired: policy?.approvalRequired || false, ready: isAdmin, isAdmin, adminId: isAdmin ? selfId : null, status: "waiting", participants: isAdmin ? [selfId] : [], invitation: encodeInvitation(current), error: null }
+  view = { ...view, nickname: vault.nickname, participantNames: vault.nickname ? { [selfId]: vault.nickname } : {}, sync: undefined, sourceReadiness: {}, pendingParticipants: [], blockedKeys: isAdmin ? policy?.blocked || [] : [], approvalRequired: policy?.approvalRequired || false, ready: isAdmin, isAdmin, adminId: isAdmin ? selfId : null, status: "waiting", participants: isAdmin ? [selfId] : [], invitation: encodeInvitation(current), error: null }
   let sequence = 0, lastAdminSeen = Date.now(), nextRetry = Date.now() + retryDelay
   const challenges = new Map<string, { nonce: string; expires: number }>()
   const authenticated = new Map<string, string>()
@@ -102,7 +102,7 @@ async function connect(retryDelay = 30000) {
     const transport = room, action = transport.makeAction("wtg-state")
     const send = async (kind: string, data: object = {}, target?: string) => {
       if (epoch !== generation) return
-      await action.send({ version: 5, roomId: current.roomId, id: crypto.randomUUID(), sequence: ++sequence, kind, ...data }, target ? { target } : undefined)
+      await action.send({ version: 5, roomId: current.roomId, id: crypto.randomUUID(), sequence: ++sequence, kind, ...data, nickname: vault.nickname }, target ? { target } : undefined)
     }
     sendMessage = send
     playbackSession = new PlaybackSession({
@@ -129,6 +129,7 @@ async function connect(retryDelay = 30000) {
       vault.policies = [...(vault.policies || []).filter(p => p.roomId !== current.roomId || p.adminKey !== current.adminKey), next]
       await save()
       updateMembers()
+      view.participantNames = Object.fromEntries([selfId, ...authenticated.keys()].filter(id => validNickname(view.participantNames?.[id])).map(id => [id, view.participantNames![id]]))
       if (!isAdmin) view.participants = view.participants.filter(id => isAdmitted(next, memberKeys[id]))
       view.approvalRequired = next.approvalRequired
       if (next.blocked.includes(identity.publicKey)) {
@@ -139,6 +140,7 @@ async function connect(retryDelay = 30000) {
     const snapshot = async (target?: string) => {
       if (!isAdmin || !policy) return
       updateMembers()
+      view.participantNames = Object.fromEntries([selfId, ...authenticated.keys()].filter(id => validNickname(view.participantNames?.[id])).map(id => [id, view.participantNames![id]]))
       view.status = view.participants.length > 1 ? "connected" : "waiting"
       view.sourceReadiness = Object.fromEntries(Object.entries(view.sourceReadiness).filter(([id]) => view.participants.includes(id)))
       notifySource()
@@ -147,7 +149,7 @@ async function connect(retryDelay = 30000) {
       const recipients = target ? [target] : [...authenticated.keys()]
       for (const id of recipients) {
         if (isAdmitted(policy, authenticated.get(id) || "")) {
-          await send("snapshot", { shared: view.shared, playbackState: playbackSession?.wire(), sourceReadiness: view.sourceReadiness, participants: view.participants, memberKeys: Object.fromEntries([[selfId, identity.publicKey], ...[...authenticated].filter(([id]) => view.participants.includes(id))]), policyRevision: policy.revision }, id)
+          await send("snapshot", { participantNames: Object.fromEntries(view.participants.filter(id => validNickname(view.participantNames?.[id])).map(id => [id, view.participantNames![id]])), shared: view.shared, playbackState: playbackSession?.wire(), sourceReadiness: view.sourceReadiness, participants: view.participants, memberKeys: Object.fromEntries([[selfId, identity.publicKey], ...[...authenticated].filter(([id]) => view.participants.includes(id))]), policyRevision: policy.revision }, id)
         }
       }
     }
@@ -241,6 +243,7 @@ async function connect(retryDelay = 30000) {
         challenges.delete(peerId)
         if (!await verify(m.publicKey, m.signature, challengeText(current.roomId, selfId, peerId, expected.nonce)) || epoch !== generation) return
         authenticated.set(peerId, m.publicKey)
+        if (validNickname(m.nickname)) view.participantNames = { ...view.participantNames, [peerId]: m.nickname }
         if (m.publicKey === current.adminKey) { view.adminId = peerId; lastAdminSeen = now }
         if (isAdmin) {
           if (policy && !policy.approvalRequired && !policy.blocked.includes(m.publicKey) && !isAdmitted(policy, m.publicKey) && policy.allowed.length < 128) {
@@ -252,6 +255,7 @@ async function connect(retryDelay = 30000) {
         else await send("hello", {}, peerId)
       }
       if (m.kind === "hello" && authenticated.has(peerId)) {
+        if (validNickname(m.nickname)) view.participantNames = { ...view.participantNames, [peerId]: m.nickname }
         if (isAdmin) await snapshot(peerId)
         const ended = vault.ended.find(c => c.roomId === current.roomId && c.adminKey === current.adminKey)
         if (ended) await send("ended", { certificate: ended }, peerId)
@@ -266,6 +270,12 @@ async function connect(retryDelay = 30000) {
         retryDelay = 30000
         nextRetry = now + retryDelay
         view = { ...view, ready: true, status: "connected", adminId: peerId, error: null, shared: m.shared, participants: [...new Set([selfId, peerId, ...m.participants])] }
+        const names = m.participantNames
+        view.participantNames = Object.fromEntries(view.participants.flatMap(id => {
+          const name = names && typeof names === "object" && Object.hasOwn(names, id) ? (names as Record<string, unknown>)[id] : undefined
+          return validNickname(name) ? [[id, name]] : []
+        }))
+        if (vault.nickname) view.participantNames[selfId] = vault.nickname
         await playbackSession?.acceptSnapshot(m.playbackState)
         if (m.sourceReadiness && typeof m.sourceReadiness === "object") view.sourceReadiness = Object.fromEntries(Object.entries(m.sourceReadiness).filter(([id, state]) => view.participants.includes(id) && validReadiness(state) && state.revision === sourceRevision(view.shared)))
         await save()
@@ -314,6 +324,7 @@ async function connect(retryDelay = 30000) {
 export function initializeRoom() {
   if (!initialized) initialized = (async () => {
     vault = validateVault(await vaultRequest("read"))
+    view.nickname = vault.nickname
     if (!vault.identity) { vault.identity = await createIdentity(); await vaultRequest("write", vault) }
     if (!await validateIdentity(vault.identity)) throw new Error("Сохранённые ключи не соответствуют друг другу; восстановление остановлено")
     for (const policy of vault.policies || []) {
@@ -340,12 +351,16 @@ export function roomCommand(command: RoomCommand): Promise<RoomView> {
     if (command.kind === "status") notifySource()
     if (command.kind === "status" && invite && !room) await connect(60000)
     if (command.kind === "leave") {
-      await disconnect(); invite = undefined; view = idle(); await save(); notifySource()
+      await disconnect(); invite = undefined; view = { ...idle(), nickname: vault.nickname }; await save(); notifySource()
     }
     if (command.kind === "create" || command.kind === "join") {
       if (invite) throw new Error("Сначала выйдите из текущей комнаты")
       const next: Invitation = command.kind === "create" ? { version: 2, roomId: randomToken(), secret: randomToken(), adminKey: vault.identity!.publicKey } : decodeInvitation(command.invitation.trim())
       if (vault.ended.some(c => c.roomId === next.roomId && c.adminKey === next.adminKey)) throw new Error("Комната уже завершена")
+      if (command.nickname !== undefined) {
+        if (!validNickname(command.nickname)) throw new Error("Укажи прозвище от 1 до 32 символов")
+        vault.nickname = command.nickname
+      }
       invite = next
       view.shared = command.kind === "create" ? command.initial || empty() : empty()
       await save()
@@ -375,6 +390,6 @@ export function roomCommand(command: RoomCommand): Promise<RoomView> {
       await vaultRequest("write", vault)
       try { await sendMessage?.("ended", { certificate }) } finally { await applyEnd(certificate) }
     }
-    return structuredClone(view)
+    return structuredClone({ ...view, nickname: vault.nickname })
   })
 }

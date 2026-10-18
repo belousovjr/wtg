@@ -69,14 +69,17 @@ test("persistent identity restores creator under new Peer ID; guest waits for ve
   const network = [], adminDisk = {}, guestDisk = {}
   const admin = client("admin-old", adminDisk, network), guest = client("guest", guestDisk, network)
   const initial = { url: "https://example.com", video: null, playback: { position: 35, paused: false, rate: 1 } }
-  const created = await admin.roomCommand({ kind: "create", initial })
-  await guest.roomCommand({ kind: "join", invitation: created.invitation })
+  const created = await admin.roomCommand({ kind: "create", initial, nickname: "Роза" })
+  await guest.roomCommand({ kind: "join", invitation: created.invitation, nickname: "Бро" })
   assert.equal((await guest.roomCommand({ kind: "status" })).ready, false)
   admin.transports.at(-1).onPeerJoin(guest.id)
   guest.transports.at(-1).onPeerJoin(admin.id)
   await settle(admin, guest)
   assert.equal((await guest.roomCommand({ kind: "status" })).ready, true)
   assert.equal((await guest.roomCommand({ kind: "status" })).adminId, "admin-old")
+  assert.deepEqual((await guest.roomCommand({ kind: "status" })).participantNames, { "admin-old": "Роза", guest: "Бро" })
+  assert.equal((await admin.roomCommand({ kind: "status" })).participantNames.guest, "Бро")
+  assert.equal(guestDisk.value.nickname, "Бро")
   const saved = structuredClone(adminDisk.value)
   await admin.roomCommand({ kind: "leave" })
   assert.equal(adminDisk.value.session, null)
@@ -88,12 +91,22 @@ test("persistent identity restores creator under new Peer ID; guest waits for ve
   assert.equal(state.shared.playback.paused, true)
   assert.equal(state.shared.playback.position, 35)
   assert.equal(state.invitation, created.invitation)
+  assert.equal(state.nickname, "Роза")
   restored.transports.at(-1).onPeerJoin(guest.id)
   guest.transports.at(-1).onPeerJoin(restored.id)
   await settle(restored, guest)
   assert.equal((await guest.roomCommand({ kind: "status" })).adminId, "admin-new")
+  assert.equal((await guest.roomCommand({ kind: "status" })).participantNames["admin-new"], "Роза")
   await restored.roomCommand({ kind: "leave" })
   await guest.roomCommand({ kind: "leave" })
+  assert.equal((await guest.roomCommand({ kind: "status" })).nickname, "Бро")
+})
+
+test("nicknames validate bounded display names without becoming identity", () => {
+  for (const name of ["Роза", "Бро 🌸", "<script>"]) assert.equal(protocol.validNickname(name), true)
+  for (const name of ["", " ", " name", "x".repeat(33), "x\n", "a\u202eb"]) assert.equal(protocol.validNickname(name), false)
+  assert.equal(protocol.validRoomCommand({ kind: "create", nickname: "" }), false)
+  assert.equal(protocol.validRoomCommand({ kind: "join", invitation: "invite", nickname: " " }), false)
 })
 
 test("signed end survives offline guest and cannot be forged", async () => {
