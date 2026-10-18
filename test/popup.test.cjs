@@ -15,6 +15,7 @@ function load(relative) {
   mod.paths = module.paths
   cache.set(filename, mod)
   mod.require = id => {
+    if (id.startsWith("url:")) return { default: "/logo.svg" }
     if (id.endsWith(".css")) return {}
     if (id.startsWith(".") || id.startsWith("~/")) {
       const base = id.startsWith("~/") ? path.resolve(root, id.slice(2)) : path.resolve(path.dirname(filename), id)
@@ -33,6 +34,7 @@ test("popup renders installed shadcn primitives with React 19 without touching r
   const { default: Popup } = load("popup.tsx")
   const html = renderToStaticMarkup(React.createElement(Popup))
   assert.match(html, /Watch Together/)
+  assert.match(html, /alt="Логотип Watch Together"/)
   assert.match(html, /data-slot="badge"/)
   assert.match(html, /data-slot="accordion"/)
   assert.match(html, /data-slot="spinner"/)
@@ -58,4 +60,17 @@ test("popup business components use imported UI controls rather than handmade na
     assert.doesNotMatch(code, /<(?:button|input|textarea|details|summary|progress)\b|window\.confirm\(/, file)
     assert.match(code, /from ["']\.\/?(?:components\/)?ui\//, file)
   }
+})
+
+test("popup fixes document width independently of content and scrollbar visibility", () => {
+  const css = readFileSync(path.join(root, "style.css"), "utf8")
+  const html = css.match(/html\s*\{([^}]+)\}/)[1]
+  for (const property of ["width", "min-width", "max-width"]) assert.match(html, new RegExp(`${property}:\\s*400px`))
+  assert.match(html, /overflow:\s*hidden/)
+  const main = css.match(/\bmain\s*\{([^}]+)\}/)[1]
+  assert.match(main, /scrollbar-gutter:\s*stable/)
+  assert.match(main, /overflow-y:\s*scroll/)
+  assert.match(main, /max-height:\s*600px/)
+  assert.match(main, /box-sizing:\s*border-box/)
+  assert.match(readFileSync(path.join(root, "popup.tsx"), "utf8"), /<main className="w-full min-w-0/)
 })

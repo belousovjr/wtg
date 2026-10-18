@@ -8,7 +8,8 @@ import { Alert, AlertDescription } from "./components/ui/alert"
 import { Badge } from "./components/ui/badge"
 import { Separator } from "./components/ui/separator"
 import { Spinner } from "./components/ui/spinner"
-import { Clapperboard, Radio, ScanLine } from "lucide-react"
+import { Radio, ScanLine } from "lucide-react"
+import logoUrl from "url:./assets/logo.svg"
 import "./style.generated.css"
 
 function IndexPopup() {
@@ -32,9 +33,9 @@ function IndexPopup() {
   }
 
   return (
-    <main className="w-[400px] space-y-4 p-4 text-sm [overflow-wrap:anywhere]">
+    <main className="w-full min-w-0 space-y-4 p-4 text-sm [overflow-wrap:anywhere]">
       <header className="flex items-center gap-3 py-1">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground"><Clapperboard className="size-5" /></div>
+        <img src={logoUrl} alt="Логотип Watch Together" className="size-11 shrink-0 rounded-xl object-contain" width={44} height={44} />
         <div><h1 className="text-base font-semibold tracking-tight">Watch Together</h1><p className="text-xs text-muted-foreground">Один просмотр. Вместе.</p></div>
         <Badge variant="secondary" className="ml-auto"><Radio className="size-3" />P2P</Badge>
       </header>

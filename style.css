@@ -108,6 +108,33 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  body { @apply bg-background text-foreground; }
+  html {
+    width: 400px;
+    min-width: 400px;
+    max-width: 400px;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-background text-foreground;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  /* Keep scrolling inside a fixed-width box, not Chrome's auto-sized viewport. */
+  main {
+    box-sizing: border-box;
+    max-height: 600px;
+    overflow-x: hidden;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+  }
+  #__plasmo, main, main * { min-width: 0; }
+  main img, main textarea, main input, main pre { max-width: 100%; }
+  main [data-slot="card-title"], main code { overflow-wrap: anywhere; }
   ::selection { background: var(--accent); color: var(--accent-foreground); }
 }
+
+/* Override primitive utility classes only at the popup composition boundary. */
+main [data-slot="button"] { max-width: 100%; white-space: normal; }
