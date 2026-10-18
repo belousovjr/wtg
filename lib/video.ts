@@ -29,7 +29,7 @@ export type VideoSnapshot = {
 }
 export type VideoAction =
   | { kind: "list" }
-  | { kind: "pick" }
+  | { kind: "pick"; shared?: { roomId: string; revision: number } }
   | { kind: "cancel" }
   | { kind: "clear" }
   | { kind: "select"; id: string }

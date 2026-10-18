@@ -16,6 +16,31 @@ function load(name, imports = {}) {
 const source = load("source"), protocol = load("room-protocol")
 const descriptor = { pageUrl: "https://example.com/watch", frameUrl: "https://example.com/watch", framePath: [], shadowPath: [], selector: "#video", source: "https://media.example.com/1.mp4", duration: 100 }
 const shared = { url: descriptor.pageUrl, video: descriptor, sourceRevision: 1, playback: { position: 0, paused: true, rate: 1 } }
+test("shared pick uses the initiating tab URL, not the frame descriptor URL", () => {
+  const base = "https://omnirezka.tv/series/comedy/93243-s-nulya-2026.html"
+  const stale = { ...descriptor, pageUrl: `${base}#t:440-s:1-e:1` }
+  const withoutHash = source.pickedSource(base, stale)
+  assert.equal(withoutHash.url, base)
+  assert.equal(withoutHash.video.pageUrl, base)
+  const withHash = source.pickedSource(`${base}#t:10-s:1-e:2`, { ...descriptor, pageUrl: base })
+  assert.equal(withHash.url, `${base}#t:10-s:1-e:2`)
+  assert.equal(withHash.video.pageUrl, withHash.url)
+  assert.equal(stale.pageUrl, `${base}#t:440-s:1-e:1`)
+})
+test("exact URL application waits for the browser and preserves both absent and present hash", async () => {
+  const base = "https://omnirezka.tv/series/comedy/93243-s-nulya-2026.html"
+  let actual = `${base}#t:440-s:1-e:1`, target, reads = 0
+  global.chrome = { tabs: {
+    update: async (_id, options) => { target = options.url; reads = 0; return { url: actual, pendingUrl: target } },
+    get: async () => { if (++reads >= 2) actual = target; return { url: actual, pendingUrl: actual === target ? undefined : target } }
+  } }
+  const { applyExactTabUrl } = load("source-viewer", { "./messages": { CHANNEL: "test" }, "./source": source, "./room-protocol": protocol })
+  await applyExactTabUrl(1, base)
+  assert.equal(actual, base)
+  assert.equal(reads, 2)
+  await applyExactTabUrl(1, `${base}#t:20-s:1-e:2`)
+  assert.equal(actual, `${base}#t:20-s:1-e:2`)
+})
 test("group status distinguishes shared choice from confirmed bindings, stale revisions and autoplay blocks", () => {
   const { groupPlayerStatus } = load("group-status")
   const room = { ready: true, shared, participants: ["self", "guest"], sourceReadiness: {}, sync: { epoch: "epoch", command: { sequence: 1 }, preparation: null, players: {} } }
@@ -129,7 +154,13 @@ test("viewer only navigates explicitly bound tabs, preserves matching URLs and r
   assert.equal(reloads, 1) // Explicit shared source change reloads even the same URL.
   await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...shared, sourceRevision: 2 } })
   assert.equal(reloads, 1) // Periodic snapshots must not cause reload loops.
-  updated.sourceRevision = 3
+  tabs.get(1).url = `${shared.url}#t:440-s:1-e:1`
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...shared, sourceRevision: 3 } })
+  assert.equal(tabs.get(1).url, shared.url)
+  assert.equal(reloads, 2) // Removed hash is applied before reloading.
+  await viewer.applySourceState({ roomId: "room", ready: true, shared: { ...shared, sourceRevision: 3 } })
+  assert.equal(reloads, 2)
+  updated.sourceRevision = 4
   await viewer.applySourceState({ roomId: "room", ready: true, shared: updated })
   assert.equal(created, 0)
   assert.equal(tabs.get(1).url, updated.url)

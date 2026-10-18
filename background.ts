@@ -1,6 +1,8 @@
 import { CHANNEL, isRequest, type Request } from "./lib/messages"
 import { validateVault } from "./lib/persistence"
 import { decodeInvitation } from "./lib/room-protocol"
+import { sourceRevision, pickedSource } from "./lib/source"
+import type { TabVideos } from "./lib/video"
 import { handleBindingMessage } from "./lib/bindings"
 import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, selectLocalSource } from "./lib/source-viewer"
 
@@ -141,6 +143,15 @@ async function handle(message: Request) {
     return { ok: true, data: { frames: results.filter(Boolean), unavailableFrames: results.filter(r => !r).length } }
   }
   if (message.type === "video") {
+    if (message.action.kind === "pick") {
+      const key = `videoPick:${message.target.tabId}`
+      if (message.action.shared) {
+        const tab = await chrome.tabs.get(message.target.tabId)
+        if (!tab.url) throw new Error("Не удалось прочитать адрес выбранной вкладки")
+        await chrome.storage.session.set({ [key]: { ...message.action.shared, url: tab.url, expires: Date.now() + 60000 } })
+      }
+      else await chrome.storage.session.remove(key)
+    }
     return chrome.tabs.sendMessage(message.target.tabId, { channel: CHANNEL, to: "content", type: "video", action: message.action }, { frameId: message.target.frameId })
   }
   if (message.type === "frame-status") {
@@ -156,11 +167,28 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || !isRequest(message) || message.to !== "background") return
   if ((message.type === "video-selected" || message.type === "cancel-picking") && sender.tab?.id !== undefined && sender.frameId !== undefined) {
     const tabId = sender.tab.id
-    if (message.type === "video-selected") void selectLocalSource(tabId, sender.frameId, message.selectedId).catch(() => {})
-    void chrome.webNavigation.getAllFrames({ tabId }).then(frames => Promise.allSettled(
+    const selection = (async () => {
+      const key = `videoPick:${tabId}`
+      const intent = (await chrome.storage.session.get(key))[key]
+      await chrome.storage.session.remove(key)
+      if (message.type !== "video-selected") return
+      if (!intent) { await selectLocalSource(tabId, sender.frameId!, message.selectedId); return }
+      if (intent.expires < Date.now()) throw new Error("Выбор истёк. Открой расширение и попробуй снова.")
+      const current = await handle({ channel: CHANNEL, to: "background", type: "room", command: { kind: "status" } })
+      if (!current?.ok || !current.data.ready || !current.data.invitation || decodeInvitation(current.data.invitation).roomId !== intent.roomId || sourceRevision(current.data.shared) !== intent.revision) throw new Error("Источник комнаты изменился. Выбери плеер заново.")
+      const result = await handle({ channel: CHANNEL, to: "background", type: "tab-videos", tabId })
+      const videos = result?.data as TabVideos
+      const video = videos?.frames.find(frame => frame.frameId === sender.frameId)?.snapshot.videos.find(video => video.id === message.selectedId)
+      if (!video) throw new Error("Выбранный плеер недоступен")
+      const source = pickedSource(intent.url, video.descriptor)
+      const reply = await handle({ channel: CHANNEL, to: "background", type: "room", command: { kind: "source", ...source, expectedRevision: intent.revision, commandId: crypto.randomUUID() } })
+      if (!reply?.ok) throw new Error(reply?.error || "Не удалось выбрать плеер для всех")
+    })()
+    const cleanup = chrome.webNavigation.getAllFrames({ tabId }).then(frames => Promise.allSettled(
       (frames || []).filter(frame => frame.frameId !== sender.frameId).map(frame =>
         chrome.tabs.sendMessage(tabId, { channel: CHANNEL, to: "content", type: "video", action: { kind: message.type === "video-selected" ? "clear" : "cancel" } }, { frameId: frame.frameId }))
-    )).then(() => respond({ ok: true, data: null }), () => respond({ ok: false, error: "Не удалось сбросить выбор других фреймов" }))
+    ))
+    void Promise.all([selection, cleanup]).then(() => respond({ ok: true, data: null }), error => respond({ ok: false, error: error instanceof Error ? error.message : "Ошибка выбора плеера" }))
     return true
   }
   if (sender.tab && (!("target" in message) || message.target.tabId !== sender.tab.id || message.target.frameId !== sender.frameId)) {

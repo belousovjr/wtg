@@ -141,7 +141,9 @@ function select(video: HTMLVideoElement) {
   descriptor = describe(video)
   setSelected(video)
   persistBinding(true)
-  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "video-selected", selectedId: idFor(video) }).catch(() => {})
+  void chrome.runtime.sendMessage({ channel: CHANNEL, to: "background", type: "video-selected", selectedId: idFor(video) }).then(reply => {
+    if (!reply?.ok) bindingNotice = reply?.error || "Ошибка выбора плеера"
+  }).catch(() => { bindingNotice = "Не удалось передать выбор плеера" })
 }
 function onClick(event: MouseEvent) {
   const video = candidate(event)

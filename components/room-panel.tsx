@@ -4,7 +4,6 @@ import type { RoomCommand, RoomView, SharedState } from "../lib/room-protocol"
 import type { TabVideos } from "../lib/video"
 import { LoadingStatus } from "./loading-status"
 import { SourceControls } from "./source-controls"
-import { VideoPicker } from "./video-picker"
 import { GroupPlayerStatus } from "./group-player-status"
 import { Button } from "./ui/button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./ui/card"
@@ -14,12 +13,8 @@ import { Label } from "./ui/label"
 import { Alert, AlertDescription } from "./ui/alert"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "./ui/accordion"
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "./ui/alert-dialog"
-import { Copy, Check, Plus, LogIn, LogOut, RotateCw, ShieldCheck, UserCheck } from "lucide-react"
+import { Copy, Check, Plus, LogIn, LogOut, RotateCw, UserCheck } from "lucide-react"
 
-const labels: Record<RoomView["status"], string> = {
-  idle: "Не в комнате", waiting: "Ожидание участников", connected: "Подключено",
-  reconnecting: "Ожидание администратора", error: "Ошибка соединения"
-}
 export function RoomPanel() {
   const [room, setRoom] = useState<RoomView>()
   const [invitation, setInvitation] = useState("")
@@ -63,11 +58,11 @@ export function RoomPanel() {
     catch { setCopyFailed(true); setError("Не удалось скопировать. Скопируй приглашение из поля ниже.") }
   }
   return <section className="space-y-4">
-    <div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Комната</h2>{room?.isAdmin && room.status !== "idle" && <Badge variant="outline"><ShieldCheck className="size-3" />Администратор</Badge>}</div>
     {!room || busy ? <LoadingStatus>{!room ? "Загружаем комнату…" : "Подождите…"}</LoadingStatus> :
       room.status !== "idle" && !room.ready && room.status === "waiting" ?
         <LoadingStatus>Подключаемся к комнате…</LoadingStatus> :
-        <Badge variant={room.status === "error" ? "destructive" : "secondary"} role="status">{labels[room.status]}</Badge>}
+        room.status === "reconnecting" ? <LoadingStatus>Ожидаем администратора…</LoadingStatus> :
+        room.status === "error" && <Alert variant="destructive"><AlertDescription>Ошибка соединения</AlertDescription></Alert>}
     {room?.status === "idle" && !busy ? <>
       <Card><CardHeader><CardTitle>Смотреть вместе</CardTitle><CardDescription>Создай комнату или присоединись по приглашению.</CardDescription></CardHeader><CardContent className="space-y-4">
         <Button className="w-full" disabled={busy} onClick={create}><Plus />Создать комнату</Button>
@@ -76,6 +71,7 @@ export function RoomPanel() {
       </CardContent></Card>
     </> : room && room.status !== "idle" && <>
       {room.ready && <>
+      <SourceControls room={room} />
       <GroupPlayerStatus room={room} busy={busy} remove={id => void perform({ kind: "remove", peerId: id })} />
       {room.isAdmin && room.approvalRequired && <p className="text-xs text-muted-foreground">Новые участники входят после твоего подтверждения.</p>}
       {room.isAdmin && room.pendingParticipants.length > 0 && <Card size="sm"><CardHeader><CardTitle>Ожидают допуска</CardTitle></CardHeader><CardContent className="space-y-2">
@@ -98,8 +94,6 @@ export function RoomPanel() {
       </AlertDialog>}
       </div>
       {(room.status === "error" || room.status === "reconnecting") && <Button variant="outline" disabled={busy} onClick={() => void perform({ kind: "retry" })}><RotateCw />Повторить подключение</Button>}
-      {room.ready && <SourceControls room={room} />}
-      {room.ready && <VideoPicker />}
       {room.ready && <Accordion type="single" collapsible><AccordionItem value="sync" className="border-0"><AccordionTrigger className="text-xs text-muted-foreground">Диагностика синхронизации</AccordionTrigger><AccordionContent className="space-y-2 text-xs text-muted-foreground">
         <p>{room.sync?.preparation ? "Подготовка общего запуска" : room.sync?.command ? room.sync.command.paused ? "Общая пауза" : "Общий таймлайн воспроизведения" : "Ожидаем команды плеера"}</p>
         {room.sync?.clock && <p>RTT {Math.round(room.sync.clock.rtt)} мс · неопределённость ±{Math.round(room.sync.clock.uncertainty)} мс</p>}

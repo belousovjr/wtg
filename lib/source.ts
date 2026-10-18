@@ -11,6 +11,11 @@ export function webUrl(value: string): string | null {
   } catch { return null }
 }
 export const sourceRevision = (shared: SharedState) => shared.sourceRevision || 0
+export function pickedSource(tabUrl: string, video: VideoDescriptor) {
+  const url = webUrl(tabUrl)
+  if (!url) throw new Error("Не удалось прочитать URL выбранной вкладки. Выбери плеер заново.")
+  return { url, video: { ...video, pageUrl: url } }
+}
 export function samePageLocation(a: string, b: string) {
   try {
     const x = new URL(a), y = new URL(b)

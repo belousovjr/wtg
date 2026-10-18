@@ -74,3 +74,31 @@ test("popup fixes document width independently of content and scrollbar visibili
   assert.match(main, /box-sizing:\s*border-box/)
   assert.match(readFileSync(path.join(root, "popup.tsx"), "utf8"), /<main className="w-full min-w-0/)
 })
+
+test("viewing card precedes participant cards in the room", () => {
+  const code = readFileSync(path.join(root, "components/room-panel.tsx"), "utf8")
+  assert.ok(code.indexOf("<SourceControls ") < code.indexOf("<GroupPlayerStatus "))
+  assert.equal((code.match(/<SourceControls /g) || []).length, 1)
+})
+
+test("viewing card contains contextual click-picking actions without per-video cards", () => {
+  const { VideoPicker } = load("components/video-picker.tsx")
+  const room = { ready: true, shared: { sourceRevision: 1 }, invitation: null }
+  const empty = renderToStaticMarkup(React.createElement(VideoPicker, { room }))
+  assert.match(empty, /Выбрать плеер для всех/)
+  assert.doesNotMatch(empty, /Выбрать плеер для меня|data-slot="card"/)
+  const selected = renderToStaticMarkup(React.createElement(VideoPicker, { room: { ...room, shared: { ...room.shared, video: { selector: "video", shadowPath: [], framePath: [] } } } }))
+  assert.match(selected, /Сменить плеер для всех/)
+  assert.match(selected, /Выбрать плеер для меня/)
+  assert.match(selected, /Нужно выбрать плеер у тебя/)
+  const source = readFileSync(path.join(root, "components/source-controls.tsx"), "utf8")
+  assert.ok(source.indexOf("<VideoPicker ") < source.indexOf('{room.shared.url &&'))
+})
+
+test("click-picking protocol validates shared room and revision context", () => {
+  const { isRequest, CHANNEL } = load("lib/messages.ts")
+  const request = shared => ({ channel: CHANNEL, to: "content", type: "video", action: { kind: "pick", shared } })
+  assert.equal(isRequest(request(undefined)), true)
+  assert.equal(isRequest(request({ roomId: "room", revision: 0 })), true)
+  for (const shared of [null, {}, { roomId: "room", revision: -1 }, { roomId: "room", revision: 0.5 }]) assert.equal(isRequest(request(shared)), false)
+})

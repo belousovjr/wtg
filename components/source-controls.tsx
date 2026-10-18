@@ -7,6 +7,7 @@ import { Button } from "./ui/button"
 import { Alert, AlertDescription } from "./ui/alert"
 import { Spinner } from "./ui/spinner"
 import { ExternalLink, ArrowRightLeft, Globe } from "lucide-react"
+import { VideoPicker } from "./video-picker"
 export function SourceControls({ room }: { room: RoomView }) {
   const [tabError, setTabError] = useState("")
   const [tabBusy, setTabBusy] = useState(false)
@@ -40,10 +41,11 @@ export function SourceControls({ room }: { room: RoomView }) {
     finally { setTabBusy(false) }
   }
   return <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Globe className="size-4 text-muted-foreground" />Просмотр</CardTitle>
-    <CardDescription className="break-all text-xs">{room.shared.url || "Выбери плеер ниже — страница передастся вместе с видео."}</CardDescription></CardHeader>
+    </CardHeader>
     <CardContent className="space-y-3">
+    <VideoPicker room={room} />
+    {room.shared.url && <CardDescription className="break-all text-xs">{room.shared.url}</CardDescription>}
     {room.shared.url && <>
-      {!room.shared.video && <p className="text-xs text-muted-foreground">Страница задана. Теперь выбери видео для группы ниже.</p>}
       {room.sourceReadiness[room.selfId]?.status === "unavailable" && <Alert><AlertDescription>Вкладка просмотра не привязана, закрыта или плеер недоступен.</AlertDescription></Alert>}
       {!isViewingTab && hasViewingTab && <Button variant="outline" size="sm" disabled={tabBusy} onClick={() => void tabAction("source-focus")}><ExternalLink />К вкладке просмотра</Button>}
       {wrongUrl && <Button size="sm" disabled={tabBusy} onClick={() => void tabAction("source-open-url")}>{tabBusy ? <Spinner /> : <ExternalLink />}Открыть страницу просмотра</Button>}

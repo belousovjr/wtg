@@ -53,24 +53,34 @@ async function reconcile() {
   try { tab = await chrome.tabs.get(viewer.tabId) }
   catch { viewer.closed = true; await persist(); await report("unavailable"); return }
   if (changed) {
+    const previousViewer = viewer
     const sharedChange = viewer.revision >= 0 && viewer.revision !== revision
     viewer = { boundByUser: true, roomId: state.roomId, revision, url, tabId: tab.id! }
     await persist()
     lastReport = ""
     if (sharedChange) {
+      try {
       const previousUrl = webUrl(tab.url || "")
       if (previousUrl === url) await chrome.tabs.reload(tab.id!)
       else {
-        await chrome.tabs.update(tab.id!, { url })
-        // Hash-only navigation does not load a new document on its own.
+        let sameDocument = false
         if (previousUrl) {
           const previous = new URL(previousUrl), next = new URL(url)
-          if (previous.origin === next.origin && previous.pathname === next.pathname && previous.search === next.search)
-            await chrome.tabs.reload(tab.id!)
+          sameDocument = previous.origin === next.origin && previous.pathname === next.pathname && previous.search === next.search
         }
+        if (sameDocument) {
+          await applyExactTabUrl(tab.id!, url)
+          await chrome.tabs.reload(tab.id!)
+        } else await chrome.tabs.update(tab.id!, { url })
       }
       await report("loading-page")
       return
+      } catch (error) {
+        viewer = previousViewer
+        await persist()
+        await report("unavailable")
+        throw error
+      }
     }
     if (!samePageLocation(tab.url || "", url)) { await chrome.tabs.update(tab.id!, { url }); await report("loading-page"); return }
   }
@@ -104,6 +114,16 @@ async function reconcile() {
     if (state.playback) await chrome.tabs.sendMessage(tab.id!, { channel: CHANNEL, to: "content", type: "playback-state", roomId: state.roomId, revision, playback: state.playback }, { frameId: viewer.frameId })
     await report(reply?.ok ? reply.data.status : "unavailable")
   } catch { await report("unavailable") }
+}
+// tabs.update may resolve before navigation applies; never reload the previous URL.
+export async function applyExactTabUrl(tabId: number, url: string) {
+  await chrome.tabs.update(tabId, { url })
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const tab = await chrome.tabs.get(tabId)
+    if (webUrl(tab.url || "") === url && (!tab.pendingUrl || webUrl(tab.pendingUrl) === url)) return
+    await new Promise(resolve => setTimeout(resolve, 50))
+  }
+  throw new Error("Браузер не применил точный URL просмотра")
 }
 export function applySourceState(value: SourceState) {
   return serial(async () => {
