@@ -9,6 +9,7 @@ import { Spinner } from "./ui/spinner"
 import { ExternalLink, ArrowRightLeft, Globe } from "lucide-react"
 import { VideoPicker } from "./video-picker"
 export function SourceControls({ room }: { room: RoomView }) {
+  const [playerActions, setPlayerActions] = useState<HTMLDivElement | null>(null)
   const [tabError, setTabError] = useState("")
   const [tabBusy, setTabBusy] = useState(false)
   const [isViewingTab, setIsViewingTab] = useState(false)
@@ -40,10 +41,11 @@ export function SourceControls({ room }: { room: RoomView }) {
     } catch (error) { setTabError(error instanceof Error ? error.message : "Вкладка просмотра недоступна") }
     finally { setTabBusy(false) }
   }
-  return <Card size="sm"><CardHeader><CardTitle className="flex items-center gap-2"><Globe className="size-4 text-muted-foreground" />Просмотр</CardTitle>
+  return <Card size="sm"><CardHeader className="flex flex-row items-center justify-between gap-2"><CardTitle className="flex shrink-0 items-center gap-2"><Globe className="size-4 text-muted-foreground" />Просмотр</CardTitle>
+    <div ref={setPlayerActions} className="flex justify-end" />
     </CardHeader>
     <CardContent className="space-y-3">
-    <VideoPicker room={room} />
+    <VideoPicker room={room} actionContainer={playerActions} />
     {room.shared.url && <CardDescription className="break-all text-xs">{room.shared.url}</CardDescription>}
     {room.shared.url && <>
       {room.sourceReadiness[room.selfId]?.status === "unavailable" && <Alert><AlertDescription>Вкладка просмотра не привязана, закрыта или плеер недоступен.</AlertDescription></Alert>}

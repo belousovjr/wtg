@@ -89,10 +89,10 @@ test("viewing card contains contextual click-picking actions without per-video c
   const { VideoPicker } = load("components/video-picker.tsx")
   const room = { ready: true, shared: { sourceRevision: 1 }, invitation: null }
   const empty = renderToStaticMarkup(React.createElement(VideoPicker, { room }))
-  assert.match(empty, />Выбрать для всех</)
+  assert.match(empty, />Выбрать плеер для всех</)
   assert.doesNotMatch(empty, /Выбрать для меня|data-slot="card"/)
   const selected = renderToStaticMarkup(React.createElement(VideoPicker, { room: { ...room, shared: { ...room.shared, video: { selector: "video", shadowPath: [], framePath: [] } } } }))
-  assert.match(selected, /Сменить для всех/)
+  assert.match(selected, /Сменить плеер для всех/)
   assert.doesNotMatch(selected, /Выбрать для меня/)
   assert.match(selected, /Нужно выбрать плеер у тебя/)
   const source = readFileSync(path.join(root, "components/source-controls.tsx"), "utf8")

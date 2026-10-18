@@ -120,6 +120,7 @@ async function handle(message: Request) {
   }
   if (message.type === "video-selected" || message.type === "cancel-picking") throw new Error("Frame sender required")
   if (message.type === "tab-videos") {
+    const tab = await chrome.tabs.get(message.tabId)
     const frames = await chrome.webNavigation.getAllFrames({ tabId: message.tabId }) || []
     const results = await Promise.all(frames.map(async frame => {
       try {
@@ -134,6 +135,7 @@ async function handle(message: Request) {
           current = parent
         }
         for (const video of reply.data.videos) {
+          video.label = tab.title?.trim() || video.label
           video.descriptor.pageUrl = frames.find(item => item.frameId === 0)?.url || frame.url
           video.descriptor.framePath = path
         }
