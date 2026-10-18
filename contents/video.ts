@@ -101,7 +101,7 @@ function highlight(video?: HTMLVideoElement) {
   overlay = undefined
   if (!video) return
   overlay = document.createElement("div")
-  overlay.style.cssText = "all:initial;position:fixed;pointer-events:none;z-index:2147483647;border:3px solid #7c3aed;box-sizing:border-box;background:rgba(124,58,237,.12)"
+  overlay.style.cssText = "all:initial;position:fixed;pointer-events:none;z-index:2147483647;border:3px solid #ea4c89;box-sizing:border-box;background:rgba(234,76,137,.12)"
   document.documentElement.append(overlay)
   const draw = () => {
     if (!highlighted?.isConnected || !overlay) { highlight(); return }

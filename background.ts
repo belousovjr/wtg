@@ -4,7 +4,7 @@ import { decodeInvitation } from "./lib/room-protocol"
 import { sourceRevision, pickedSource } from "./lib/source"
 import type { TabVideos } from "./lib/video"
 import { handleBindingMessage } from "./lib/bindings"
-import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, selectLocalSource } from "./lib/source-viewer"
+import { applySourceState, autoBindActiveSource, bindSourceTab, closeSource, focusSource, openSourceUrl, forwardPlaybackEvent, refreshSource, selectLocalSource, expectLocalSourcePick } from "./lib/source-viewer"
 
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
@@ -181,6 +181,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const video = videos?.frames.find(frame => frame.frameId === sender.frameId)?.snapshot.videos.find(video => video.id === message.selectedId)
       if (!video) throw new Error("Выбранный плеер недоступен")
       const source = pickedSource(intent.url, video.descriptor)
+      await expectLocalSourcePick(intent.roomId, tabId, intent.revision, source.video)
       const reply = await handle({ channel: CHANNEL, to: "background", type: "room", command: { kind: "source", ...source, expectedRevision: intent.revision, commandId: crypto.randomUUID() } })
       if (!reply?.ok) throw new Error(reply?.error || "Не удалось выбрать плеер для всех")
     })()

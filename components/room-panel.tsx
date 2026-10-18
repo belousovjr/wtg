@@ -73,12 +73,14 @@ export function RoomPanel() {
         room.status === "reconnecting" ? <LoadingStatus>Ожидаем администратора…</LoadingStatus> :
         room.status === "error" && <Alert variant="destructive"><AlertDescription>Ошибка соединения</AlertDescription></Alert>}
     {room?.status === "idle" && !busy ? <>
-      <Card><CardHeader><CardTitle>Смотреть вместе</CardTitle><CardDescription>Создай комнату или присоединись по приглашению.</CardDescription></CardHeader><CardContent className="space-y-4">
+      <Card><CardHeader><CardTitle>Смотреть вместе</CardTitle><CardDescription>Создай комнату или присоединись по приглашению.</CardDescription></CardHeader><CardContent>
+        <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (busy || !validNickname(nickname.trim())) return; if (invitation.trim()) void perform({ kind: "join", invitation: invitation.trim(), nickname: nickname.trim() }); else void create() }}>
         <div className="space-y-2"><Label htmlFor="nickname">Твоё прозвище</Label><Input id="nickname" autoComplete="nickname" maxLength={32} value={nickname} onChange={e => editNickname(e.target.value)} placeholder="Как тебя называть?" /></div>
-        <div className="space-y-2"><Label htmlFor="invitation">Приглашение</Label><Textarea id="invitation" value={invitation} onChange={e => setInvitation(e.target.value)} placeholder="wtg2.…" className="min-h-20 resize-none text-xs" /></div>
+        <div className="space-y-2"><Label htmlFor="invitation">Приглашение</Label><Input id="invitation" value={invitation} onChange={e => setInvitation(e.target.value)} placeholder="wtg2.…" autoComplete="off" spellCheck={false} className="text-xs" /></div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={busy || !validNickname(nickname.trim())} onClick={() => invitation.trim() ? void perform({ kind: "join", invitation: invitation.trim(), nickname: nickname.trim() }) : void create()}>{invitation.trim() ? <LogIn /> : <Plus />}{invitation.trim() ? "Войти" : "Создать"}</Button>
+          <Button type="submit" size="sm" disabled={busy || !validNickname(nickname.trim())}>{invitation.trim() ? <LogIn /> : <Plus />}{invitation.trim() ? "Войти" : "Создать"}</Button>
         </div>
+        </form>
       </CardContent></Card>
     </> : room && room.status !== "idle" && <>
       {room.ready && <>

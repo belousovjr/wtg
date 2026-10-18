@@ -106,3 +106,12 @@ test("click-picking protocol validates shared room and revision context", () => 
   assert.equal(isRequest(request({ roomId: "room", revision: 0 })), true)
   for (const shared of [null, {}, { roomId: "room", revision: -1 }, { roomId: "room", revision: 0.5 }]) assert.equal(isRequest(request(shared)), false)
 })
+
+test("invitation uses a shadcn Input and native submit form instead of a multiline field", () => {
+  const code = readFileSync(path.join(root, "components/room-panel.tsx"), "utf8")
+  assert.match(code, /<form[^>]+onSubmit=/)
+  assert.match(code, /<Input id="invitation"/)
+  assert.doesNotMatch(code, /<Textarea id="invitation"/)
+  assert.match(code, /<Button type="submit"/)
+  assert.match(code, /event\.preventDefault\(\)/)
+})

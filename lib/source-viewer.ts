@@ -1,5 +1,5 @@
 import { CHANNEL } from "./messages"
-import { sameFrameLocation, samePageLocation, sourceRevision, webUrl, type SourceReadiness, type SourceStatus } from "./source"
+import { sameFrameLocation, samePageLocation, sameVideoSelection, sourceRevision, webUrl, type SourceReadiness, type SourceStatus } from "./source"
 import { validShared, type SharedState } from "./room-protocol"
 import type { VideoDescriptor } from "./video"
 import { validPlaybackRequest, validPlayerReport, type PlaybackLocal } from "./playback"
@@ -11,6 +11,10 @@ let viewer: Viewer | undefined
 let loaded = false
 let pending: Promise<unknown> = Promise.resolve()
 let lastReport = ""
+let localPick: { roomId: string; tabId: number; revision: number; video: VideoDescriptor; expires: number } | undefined
+export function expectLocalSourcePick(roomId: string, tabId: number, revision: number, video: VideoDescriptor) {
+  return serial(async () => { localPick = { roomId, tabId, revision: revision + 1, video, expires: Date.now() + 15000 } })
+}
 function serial<T>(work: () => Promise<T>) {
   const task = pending.then(work)
   pending = task.catch(() => {})
@@ -55,10 +59,13 @@ async function reconcile() {
   if (changed) {
     const previousViewer = viewer
     const sharedChange = viewer.revision >= 0 && viewer.revision !== revision
+    const keepPickedPage = !!localPick && localPick.expires > Date.now() && localPick.roomId === state.roomId && localPick.tabId === tab.id &&
+      localPick.revision === revision && webUrl(tab.url || "") === url && sameVideoSelection(localPick.video, state.shared.video)
+    if (localPick && (localPick.expires <= Date.now() || localPick.roomId !== state.roomId || revision >= localPick.revision)) localPick = undefined
     viewer = { boundByUser: true, roomId: state.roomId, revision, url, tabId: tab.id! }
     await persist()
     lastReport = ""
-    if (sharedChange) {
+    if (sharedChange && !keepPickedPage) {
       try {
       const previousUrl = webUrl(tab.url || "")
       if (previousUrl === url) await chrome.tabs.reload(tab.id!)
